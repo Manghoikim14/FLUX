@@ -1,0 +1,245 @@
+===================================================================
+
+CHAT APP - MASTER SYSTEM PROMPT & ARCHITECTURE CONTRACT
+
+===================================================================
+
+
+
+1. PROJECT OVERVIEW & CORE ARCHITECTURE
+
+   - Objective: Private, real-time chat application with Friend Code pairing, 
+
+     scheduled delivery, auto-deleting messages (TTL), dynamic client-side 
+
+     translation, and real-time document co-editing.
+
+   - Architecture: Modular Monolith separated into backend/ (Node.js/Express) 
+
+     and frontend/ (React / Web UI).
+
+   - Tech Stack: Node.js, Express, Socket.io, PostgreSQL, Redis / BullMQ, React.
+
+
+
+2. TEAM ROLES & FILE OWNERSHIP MATRIX
+
+   When prompted by a team member, ONLY generate or edit code for their assigned files:
+
+
+
+   [ PERSON 1: DATABASE, PAIRING & CO-EDITING ]
+
+   - schema.sql                     <-- PostgreSQL table setup script
+
+   - backend/config/db.js           <-- Database pool connection
+
+   - backend/utils/generateFriendCode.js <-- Friend code generator helper
+
+   - backend/routes/authRoutes.js   <-- User registration REST API
+
+   - backend/routes/friendRoutes.js <-- Send & accept friend request APIs
+
+   - frontend/src/components/DocumentEditor.jsx <-- Real-time collaborative editor
+
+
+
+   [ PERSON 2: SOCKETS, QUEUES & INFRASTRUCTURE ]
+
+   - backend/package.json           <-- Server dependencies & scripts
+
+   - backend/.env                   <-- Environment variables & port setup
+
+   - backend/server.js              <-- Main server entry point (Express + Socket.io)
+
+   - backend/sockets/chatSocket.js  <-- WebSockets room signaling & live events
+
+   - backend/queues/messageQueue.js <-- Redis worker for scheduled messages
+
+   - backend/queues/deletionQueue.js <-- Redis worker for auto-delete (TTL)
+
+
+
+   [ PERSON 3: FRONTEND UI & TRANSLATION ENGINE ]
+
+   - frontend/package.json          <-- UI dependencies & scripts
+
+   - frontend/src/main.jsx          <-- React DOM entry point
+
+   - frontend/src/App.jsx           <-- Main layout & app container
+
+   - frontend/src/services/api.js   <-- REST API fetch wrapper (Person 1's APIs)
+
+   - frontend/src/services/socket.js <-- Socket.io client setup (Person 2's server)
+
+   - frontend/src/services/translation.js <-- Client-side translation engine
+
+   - frontend/src/components/FriendRequest.jsx <-- Add friend UI component
+
+   - frontend/src/components/LanguageSelect.jsx <-- Language dropdown UI
+
+   - frontend/src/components/ChatBubble.jsx <-- Chat bubble UI (TTL timer & toggle)
+
+
+
+3. GLOBAL CODING GUIDELINES & STYLE RULES
+
+   - JavaScript/Node Syntax: Use modern ES6+ syntax with async/await for async operations.
+
+   - Variable Conventions: Use camelCase for JavaScript variables/functions and snake_case for database fields and SQL queries.
+
+   - Error Handling: Standardized JSON error response format:
+
+     Success: { "success": true, "data": { ... } }
+
+     Failure: { "success": false, "error": "Human-readable error message" }
+
+   - Environment Variables: Never hardcode database credentials or ports. Always reference process.env.
+
+
+
+4. DATABASE SCHEMA (POSTGRESQL - SINGLE SOURCE OF TRUTH)
+
+
+
+   -- Users Table
+
+   CREATE TABLE users (
+
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+       username VARCHAR(50) NOT NULL,
+
+       friend_code VARCHAR(12) UNIQUE NOT NULL, -- Format: USER-XXXX
+
+       preferred_language VARCHAR(10) DEFAULT 'en',
+
+       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+
+   );
+
+
+
+   -- Friendships Table
+
+   CREATE TABLE friendships (
+
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+       requester_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+       addressee_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+       status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+
+       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+
+       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+
+       CONSTRAINT unique_friendship UNIQUE (requester_id, addressee_id)
+
+   );
+
+
+
+   -- Messages Table
+
+   CREATE TABLE messages (
+
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+       conversation_id VARCHAR(100) NOT NULL,
+
+       sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+       content TEXT NOT NULL,
+
+       source_language VARCHAR(10) NOT NULL,
+
+       is_scheduled BOOLEAN DEFAULT FALSE,
+
+       expires_at TIMESTAMP WITH TIME ZONE NULL,
+
+       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+
+   );
+
+
+
+5. SHARED JSON COMMUNICATION CONTRACT
+
+   All API endpoints and WebSocket event payloads MUST strictly follow these exact keys:
+
+
+
+   A. User Registration API (/api/users/register)
+
+      Request:  { "username": "JohnDoe", "preferred_language": "en" }
+
+      Response: { "success": true, "user": { "id": "uuid", "username": "JohnDoe", "friend_code": "USER-7F2A", "preferred_language": "en" } }
+
+
+
+   B. Friend Request API (/api/friends/request)
+
+      Request:  { "requester_id": "uuid", "target_friend_code": "USER-8A39" }
+
+      Response: { "success": true, "friendship": { "id": "uuid", "status": "pending" } }
+
+
+
+   C. WebSocket Message Payload (Event: "send_message" & "receive_message")
+
+      {
+
+        "messageId": "msg_1710000000000",
+
+        "conversationId": "room_userA_userB",
+
+        "senderId": "uuid-of-sender",
+
+        "text": "Hello world",
+
+        "sourceLanguage": "en",
+
+        "delayMs": 0,          // Set to > 0 for scheduled delivery
+
+        "ttlSeconds": 300      // Set to > 0 for auto-deletion countdown
+
+      }
+
+
+
+   D. WebSocket Auto-Deletion Event (Event: "message_deleted")
+
+      {
+
+        "conversationId": "room_userA_userB",
+
+        "messageId": "msg_1710000000000"
+
+      }
+
+
+
+   E. WebSocket Document Co-Editing Payload (Event: "doc_update")
+
+      {
+
+        "conversationId": "room_userA_userB",
+
+        "docContent": "Updated text shared between users",
+
+        "updatedBy": "uuid-of-sender"
+
+      }
+
+
+
+6. INSTRUCTIONS FOR AI CODE GENERATION
+
+   - Always verify field names against the database schema before writing queries.
+
+   - Strict File Limits: Respect the team member ownership matrix in Section 2.
+
+   - Do not rename JSON keys specified in Section 5.
