@@ -1,33 +1,30 @@
 import { useEffect, useState } from 'react';
-import { Languages, Undo2 } from 'lucide-react';
+import { Languages } from 'lucide-react';
 import { translateText } from '../services/translation';
 
-export default function ChatBubble({ message, mine, targetLanguage = "hi" }) {
+export default function ChatBubble({ message, mine }) {
+  const [translated, setTranslated] = useState("");
   const [showOriginal, setShowOriginal] = useState(false);
-  const [translated, setTranslated] = useState('');
-  const [translating, setTranslating] = useState(false);
-  const [error, setError] = useState('');
-  const [remaining, setRemaining] = useState('');
-    useEffect(() => {
-    setTranslated('');
-    setShowOriginal(false);
-  }, [message.content]);
+  const [isTranslating, setTranslating] = useState(false);
+  const [remaining, setRemaining] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!message.expiresAt) return undefined;
     const update = () => {
-      const milliseconds = new Date(message.expiresAt).getTime() - Date.now();
-      if (milliseconds <= 0) {
-        setRemaining('Expiring');
-        return;
-      }
-      const seconds = Math.ceil(milliseconds / 1000);
-      setRemaining(`${Math.ceil(seconds / 60)}m ${seconds % 60}s left`);
+      const diff = new Date(message.expiresAt) - new Date();
+      if (diff <= 0) { setRemaining("Expired"); return; }
+      setRemaining(`${Math.ceil(diff / 1000 / 60)}m`);
     };
-    const interval = window.setInterval(update, 1000);
     update();
+    const interval = window.setInterval(update, 1000);
     return () => window.clearInterval(interval);
   }, [message.expiresAt]);
+
+  function detectLanguage(text) {
+    const hasHindi = /[\u0900-\u097F]/.test(text);
+    return hasHindi ? "hi" : "en";
+  }
 
   async function toggleTranslation() {
     if (translated) {
@@ -36,11 +33,14 @@ export default function ChatBubble({ message, mine, targetLanguage = "hi" }) {
     }
     try {
       setTranslating(true);
-      setError('');
-      const result = await translateText(message.content, "hi");
+      setError("");
+      const sourceLang = detectLanguage(message.content);
+      const target = sourceLang === "hi" ? "en" : "hi";
+      const result = await translateText(message.content, target);
       setTranslated(result);
-    } catch (translationError) {
-      setError(translationError.message);
+      setShowOriginal(false);
+    } catch (err) {
+      setError(err.message);
     } finally {
       setTranslating(false);
     }
@@ -50,16 +50,16 @@ export default function ChatBubble({ message, mine, targetLanguage = "hi" }) {
     <div className={`message-row ${mine ? 'message-row-mine' : ''}`}>
       <article className={`chat-bubble ${mine ? 'chat-bubble-mine' : ''}`}>
         <p>{showOriginal || !translated ? message.content : translated}</p>
+        {translated && (
+          <div className="translated-label">
+            {showOriginal ? 'Original' : 'Translated to Hindi'}
+          </div>
+        )}
         {remaining && <span className="expiry">{remaining}</span>}
         <div className="bubble-actions">
-          <button
-            type="button"
-            onClick={toggleTranslation}
-            disabled={translating}
-            aria-label={translating ? 'Translating message' : translated && !showOriginal ? 'Show original message' : 'Translate message'}
-            title={translating ? 'Translating message' : translated && !showOriginal ? 'Show original message' : 'Translate message'}
-          >
-            {translated && !showOriginal ? <Undo2 size={14} /> : <Languages size={14} />}
+          <button type="button" onClick={toggleTranslation} disabled={translating}>
+            <Languages size={14} />
+            {translating ? ' Translating...' : translated ? (showOriginal ? ' Translated' : ' Original') : ' Translate'}
           </button>
         </div>
         {error && <span className="form-error">{error}</span>}
