@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Languages } from 'lucide-react';
+import { Languages, Undo2 } from 'lucide-react';
 import { translateText } from '../services/translation';
 
 export default function ChatBubble({ message, mine }) {
@@ -50,16 +50,16 @@ export default function ChatBubble({ message, mine }) {
     <div className={`message-row ${mine ? 'message-row-mine' : ''}`}>
       <article className={`chat-bubble ${mine ? 'chat-bubble-mine' : ''}`}>
         <p>{showOriginal || !translated ? message.content : translated}</p>
-        {translated && (
-          <div className="translated-label">
-            {showOriginal ? 'Original' : 'Translated to Hindi'}
-          </div>
-        )}
         {remaining && <span className="expiry">{remaining}</span>}
         <div className="bubble-actions">
-          <button type="button" onClick={toggleTranslation} disabled={translating}>
-            <Languages size={14} />
-            {translating ? ' Translating...' : translated ? (showOriginal ? ' Translated' : ' Original') : ' Translate'}
+          <button
+            type="button"
+            onClick={toggleTranslation}
+            disabled={isTranslating}
+            aria-label={isTranslating ? 'Translating message' : translated && !showOriginal ? 'Show original message' : 'Translate message'}
+            title={isTranslating ? 'Translating message' : translated && !showOriginal ? 'Show original message' : 'Translate message'}
+          >
+            {translated && !showOriginal ? <Undo2 size={14} /> : <Languages size={14} />}
           </button>
         </div>
         {error && <span className="form-error">{error}</span>}

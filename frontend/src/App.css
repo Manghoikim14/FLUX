@@ -575,6 +575,9 @@ body > #root > .max-w-md {
 .max-w-md main > .p-4 > .search-field { margin: 0; }
 .search-empty { padding: 20px 16px; color: #94a3b8; font-size: 12px; text-align: center; }
 .search-error { padding: 12px 16px; color: #dc2626; font-size: 12px; text-align: center; }
+.chat-load-error { display: grid; justify-items: center; gap: 10px; padding: 20px 16px; color: #dc2626; font-size: 12px; text-align: center; }
+.chat-load-error p { margin: 0; }
+.chat-load-error button { padding: 7px 12px; border: 0; border-radius: 8px; color: #fff; background: #4f46e5; font-size: 11px; font-weight: 600; }
 .chat-search-results { padding: 12px; border-top: 1px solid #e2e8f0; }
 .chat-search-results h3 { margin: 0 4px 8px; color: #64748b; font-size: 11px; font-weight: 700; }
 .chat-search-result { display: grid; width: 100%; gap: 6px; padding: 11px 12px; border: 1px solid #e2e8f0; border-radius: 10px; color: #1e293b; background: #fff; text-align: left; }
