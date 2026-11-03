@@ -68,6 +68,13 @@ h1, h2, h3, p { margin-top: 0; }
 .notification-card-unread-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: var(--accent); }
 .notification-accept { display: inline-flex; align-items: center; gap: 5px; padding: 8px 10px; border: 0; border-radius: 8px; color: var(--accent); background: #f0efff; font-size: 11px; font-weight: 600; }
 .notification-accept:hover { color: white; background: var(--accent); }
+.request-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
+.request-reject-button, .request-reject-icon { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; color: #c3425a; background: #fff0f2; font-size: 11px; font-weight: 600; }
+.request-reject-button { padding: 6px 10px; }
+.request-reject-icon { width: 26px; height: 26px; }
+.request-reject-button:hover, .request-reject-icon:hover { color: white; background: #c3425a; }
+.request-action-error { margin: 12px 16px; }
+.invitation-pending { padding: 5px 9px; border-radius: 9999px; color: #80600b; background: #fff7db; font-size: 10px; font-weight: 700; }
 .notifications-empty { display: grid; min-height: 100%; align-content: center; justify-items: center; text-align: center; }
 .notifications-empty h2 { margin: 0 0 5px; font-family: Manrope, sans-serif; font-size: 17px; }
 .notifications-empty p { color: var(--muted); font-size: 12px; }

@@ -13,13 +13,16 @@ import {
   Send, 
   Settings, 
   UserPlus, 
-  Users 
+  Users,
+  X,
 } from 'lucide-react';
 import {
   acceptFriendRequest,
   getFriendRequests,
   getFriends,
+  getSentFriendRequests,
   login,
+  rejectFriendRequest,
   register,
   requestFriend,
   searchMessages,
@@ -43,6 +46,7 @@ export default function App() {
   const [session, setSession] = useState(savedSession);
   const [friends, setFriends] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [sentRequests, setSentRequests] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [activeTab, setActiveTab] = useState('chats'); // 'chats' | 'friends' | 'notifications' | 'settings'
   const [activeFriend, setActiveFriend] = useState(null);
@@ -99,9 +103,10 @@ export default function App() {
   }
 
   const refreshContacts = useCallback(async (token) => {
-    const [friendResult, requestResult] = await Promise.all([
+    const [friendResult, requestResult, sentRequestResult] = await Promise.all([
       getFriends(token),
       getFriendRequests(token),
+      getSentFriendRequests(token),
     ]);
     
     setFriends((currentFriends) => {
@@ -118,10 +123,14 @@ export default function App() {
     });
 
     setRequests(requestResult.requests);
+    setSentRequests(sentRequestResult.requests);
     setNotifications((current) => {
       const pendingRequestIds = new Set(requestResult.requests.map((request) => request.id));
+      const sentRequestById = new Map(sentRequestResult.requests.map((request) => [request.id, request]));
       const retained = current.filter((item) => (
-        item.kind !== 'friend-request' || pendingRequestIds.has(item.requestId)
+        item.kind === 'friend-request'
+          ? pendingRequestIds.has(item.requestId)
+          : item.kind !== 'friend-request-status' || sentRequestById.get(item.requestId)?.status === item.status
       ));
       const currentIds = new Set(retained.map((item) => item.id));
       const pending = requestResult.requests
@@ -135,7 +144,22 @@ export default function App() {
           createdAt: request.createdAt,
           read: false,
         }));
-      return [...pending, ...retained].slice(0, 50);
+      const statusUpdates = sentRequestResult.requests
+        .filter((request) => request.status === 'accepted' || request.status === 'declined')
+        .filter((request) => !currentIds.has(`friend-request-status:${request.id}`))
+        .map((request) => ({
+          id: `friend-request-status:${request.id}`,
+          kind: 'friend-request-status',
+          requestId: request.id,
+          status: request.status,
+          peerId: request.user.id,
+          title: request.status === 'accepted'
+            ? `${request.user.displayName} accepted your friend request`
+            : `${request.user.displayName} declined your friend request`,
+          createdAt: request.createdAt,
+          read: true,
+        }));
+      return [...pending, ...statusUpdates, ...retained].slice(0, 50);
     });
   }, []);
 
@@ -207,10 +231,25 @@ export default function App() {
 
     client.on('notification:friend-accepted', (notification) => {
       addNotification({
-        id: `friend-accepted:${notification.requestId}`,
-        kind: 'friend-accepted',
+        id: `friend-request-status:${notification.requestId}`,
+        kind: 'friend-request-status',
+        requestId: notification.requestId,
+        status: 'accepted',
         peerId: notification.peerId,
         title: `${notification.displayName} accepted your friend request`,
+        createdAt: notification.createdAt,
+        read: false,
+      });
+    });
+
+    client.on('notification:friend-rejected', (notification) => {
+      addNotification({
+        id: `friend-request-status:${notification.requestId}`,
+        kind: 'friend-request-status',
+        requestId: notification.requestId,
+        status: 'declined',
+        peerId: notification.peerId,
+        title: `${notification.displayName} declined your friend request`,
         createdAt: notification.createdAt,
         read: false,
       });
@@ -394,6 +433,18 @@ export default function App() {
     openChat(result.user);
   }
 
+  async function handleReject(requestId) {
+    setError('');
+    try {
+      await rejectFriendRequest(session.token, requestId);
+      setRequests((current) => current.filter((request) => request.id !== requestId));
+      setNotifications((current) => current.filter((item) => item.id !== `friend-request:${requestId}`));
+      await refreshContacts(session.token);
+    } catch (rejectError) {
+      setError(rejectError.message);
+    }
+  }
+
   async function openNotification(notification) {
     setNotifications((current) => current.map((item) => (
       item.id === notification.id ? { ...item, read: true } : item
@@ -406,7 +457,7 @@ export default function App() {
     const friend = friends.find((item) => item.id === notification.peerId);
     if (friend) {
       openChat(friend);
-    } else if (notification.kind === 'friend-accepted') {
+    } else if (notification.kind === 'friend-request-status' && notification.status === 'accepted') {
       try {
         await refreshContacts(session.token);
         openChat({
@@ -427,6 +478,10 @@ export default function App() {
   ));
   const normalizedFriendsSearch = friendsSearch.trim().toLocaleLowerCase();
   const filteredRequests = requests.filter((request) => (
+    request.user.displayName.toLocaleLowerCase().includes(normalizedFriendsSearch)
+  ));
+  const filteredSentRequests = sentRequests.filter((request) => (
+    request.status === 'pending' &&
     request.user.displayName.toLocaleLowerCase().includes(normalizedFriendsSearch)
   ));
   const normalizedMessageSearch = messageSearch.trim().toLocaleLowerCase();
@@ -621,6 +676,9 @@ export default function App() {
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 overflow-y-auto bg-slate-50 relative">
+        {error && activeTab !== 'chats' && (
+          <p className="form-error request-action-error" role="alert">{error}</p>
+        )}
 
         {/* 1. CHATS TAB */}
         {activeTab === 'chats' && (
@@ -979,16 +1037,46 @@ export default function App() {
                 {filteredRequests.map((request) => (
                   <div key={request.id} className="bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between shadow-sm">
                     <span className="font-medium text-sm text-slate-800">{request.user.displayName}</span>
-                    <button 
-                      onClick={() => handleAccept(request.id)}
-                      className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition"
-                    >
-                      Accept
-                    </button>
+                    <div className="request-actions">
+                      <button
+                        type="button"
+                        onClick={() => handleAccept(request.id)}
+                        className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReject(request.id)}
+                        className="request-reject-button"
+                      >
+                        Reject
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
+
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Sent Invitations ({filteredSentRequests.length})
+              </h3>
+              {filteredSentRequests.length > 0 ? (
+                filteredSentRequests.map((request) => (
+                  <div key={request.id} className="bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between shadow-sm">
+                    <span className="font-medium text-sm text-slate-800">{request.user.displayName}</span>
+                    <span className="invitation-pending">Pending</span>
+                  </div>
+                ))
+              ) : (
+                <p className="search-empty">
+                  {sentRequests.some((request) => request.status === 'pending')
+                    ? 'No pending invitations match your search.'
+                    : 'No pending invitations.'}
+                </p>
+              )}
+            </div>
 
           </div>
         )}
@@ -1024,7 +1112,11 @@ export default function App() {
                 >
                   <div className="flex items-center space-x-3">
                     <span className="text-indigo-600">
-                      {notification.kind === 'friend-request' ? <Users size={18} /> : <MessageCircle size={18} />}
+                      {notification.kind === 'friend-request'
+                        ? <Users size={18} />
+                        : notification.kind === 'friend-request-status'
+                          ? notification.status === 'accepted' ? <Check size={18} /> : <X size={18} />
+                          : <MessageCircle size={18} />}
                     </span>
                     <div>
                       <p className="text-sm font-semibold text-slate-800">{notification.title}</p>
@@ -1032,12 +1124,24 @@ export default function App() {
                     </div>
                   </div>
                   {notification.kind === 'friend-request' && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleAccept(notification.requestId); }}
-                      className="p-1 bg-indigo-600 text-white rounded-lg"
-                    >
-                      <Check size={14} />
-                    </button>
+                    <div className="request-actions">
+                      <button
+                        type="button"
+                        aria-label="Accept friend request"
+                        onClick={(e) => { e.stopPropagation(); handleAccept(notification.requestId); }}
+                        className="p-1 bg-indigo-600 text-white rounded-lg"
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Reject friend request"
+                        onClick={(e) => { e.stopPropagation(); handleReject(notification.requestId); }}
+                        className="request-reject-icon"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
                   )}
                 </div>
               ))

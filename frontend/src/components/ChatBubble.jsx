@@ -62,13 +62,13 @@ export default function ChatBubble({ message, mine }) {
         )}
         {remaining && <span className="expiry">{remaining}</span>}
         <div className="bubble-actions">
-          <button type="button" onClick={toggleTranslation} disabled={translating}>
+          <button type="button" onClick={toggleTranslation} disabled={isTranslating}>
             <Languages size={14} />
-            {translating ? ' Translating...' : translated ? (showOriginal ? ' Translated' : ' Original') : ' Translate'}
+            {isTranslating ? ' Translating...' : translated ? (showOriginal ? ' Translated' : ' Original') : ' Translate'}
           </button>
         </div>
         {error && <span className="form-error">{error}</span>}
-      </div>
+      </article>
     </div>
   );
 }
