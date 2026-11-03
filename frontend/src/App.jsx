@@ -53,6 +53,7 @@ export default function App() {
   const [chatSearchError, setChatSearchError] = useState('');
   const [selectedSearchResult, setSelectedSearchResult] = useState(null);
   const [chatListSearch, setChatListSearch] = useState('');
+  const [showChatListSearch, setShowChatListSearch] = useState(false);
   const [friendsSearch, setFriendsSearch] = useState('');
   const [messageSearch, setMessageSearch] = useState('');
   const [showMessageSearch, setShowMessageSearch] = useState(false);
@@ -480,7 +481,7 @@ export default function App() {
     <div className="flex flex-col h-screen bg-slate-100 font-sans max-w-md mx-auto shadow-2xl overflow-hidden border-x border-slate-200">
       
       {/* HEADER BAR */}
-            <header className="px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
+      <header className="px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
         <div className="flex items-center space-x-2">
           {activeFriend && activeTab === 'chats' ? (
             <button onClick={() => setActiveFriend(null)} className="p-1 rounded-full hover:bg-slate-100 text-slate-600 mr-1">
@@ -498,13 +499,50 @@ export default function App() {
           </h1>
         </div>
 
-        {activeFriend && activeTab === 'chats' && (
-          <button 
-            className={`text-xs px-3 py-1.5 rounded-full font-medium transition ${showDocument ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`} 
-            onClick={() => setShowDocument(!showDocument)}
-          >
-            Shared notes
-          </button>
+        {activeTab === 'chats' && (
+          <div className="flex items-center gap-2">
+            {!activeFriend ? (
+              <button
+                type="button"
+                className={`p-2 rounded-full transition ${showChatListSearch ? 'bg-indigo-100 text-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
+                onClick={() => {
+                  setShowChatListSearch((isVisible) => {
+                    if (isVisible) setChatListSearch('');
+                    return !isVisible;
+                  });
+                }}
+                aria-label={showChatListSearch ? 'Close chat search' : 'Search chats and messages'}
+                aria-pressed={showChatListSearch}
+                title={showChatListSearch ? 'Close chat search' : 'Search chats and messages'}
+              >
+                <Search size={18} />
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className={`p-2 rounded-full transition ${showMessageSearch ? 'bg-indigo-100 text-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
+                  onClick={() => {
+                    setShowMessageSearch((isVisible) => {
+                      if (isVisible) setMessageSearch('');
+                      return !isVisible;
+                    });
+                  }}
+                  aria-label={showMessageSearch ? 'Close message search' : 'Search messages'}
+                  aria-pressed={showMessageSearch}
+                  title={showMessageSearch ? 'Close message search' : 'Search messages'}
+                >
+                  <Search size={18} />
+                </button>
+                <button
+                  className={`text-xs px-3 py-1.5 rounded-full font-medium transition ${showDocument ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+                  onClick={() => setShowDocument(!showDocument)}
+                >
+                  Shared notes
+                </button>
+              </>
+            )}
+          </div>
         )}
       </header>
      
@@ -728,7 +766,21 @@ export default function App() {
             </div>
           ) : (
             /* Friends / Recent Conversations List */
-            <div className="divide-y divide-slate-100 bg-white">
+            <div className="bg-white">
+              {showChatListSearch && (
+                <label className="search-field">
+                  <Search size={17} aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={chatListSearch}
+                    onChange={(event) => setChatListSearch(event.target.value)}
+                    placeholder="Search usernames or message text"
+                    aria-label="Search usernames or message text in chats"
+                    autoFocus
+                  />
+                </label>
+              )}
+              <div className="divide-y divide-slate-100">
               {friends.length === 0 ? (
                 <div className="text-center p-8 text-slate-400">
                   <Users size={36} className="mx-auto mb-2 opacity-40" />
