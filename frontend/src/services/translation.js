@@ -1,18 +1,11 @@
-const TRANSLATE_URL = import.meta.env.VITE_TRANSLATE_API_URL;
-
-export async function translateText(text, targetLanguage) {
-  if (!TRANSLATE_URL) {
-    throw new Error('Set VITE_TRANSLATE_API_URL to enable translation.');
+export const translateText = async (text, targetLang) => {
+  if (!text) return "";
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=hi&dt=t&q=${encodeURIComponent(text)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    return data[0].map(item => item[0]).join('');
+  } catch (e) {
+    return text;
   }
-
-  const response = await fetch(TRANSLATE_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ q: text, source: 'auto', target: targetLanguage, format: 'text' }),
-  });
-  const result = await response.json();
-  if (!response.ok || typeof result.translatedText !== 'string') {
-    throw new Error(result.error || 'Translation failed.');
-  }
-  return result.translatedText;
-}
+};

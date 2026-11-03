@@ -26,6 +26,7 @@ export const login = (data) => request('/auth/login', {
 
 export const getFriends = (token) => request('/friends', { token });
 export const getFriendRequests = (token) => request('/friends/requests', { token });
+export const searchMessages = (token, query) => request(`/friends/search/messages?q=${encodeURIComponent(query)}`, { token });
 
 export const requestFriend = (token, friendCode) => request('/friends/request', {
   method: 'POST',

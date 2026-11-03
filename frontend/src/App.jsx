@@ -5,6 +5,7 @@ import {
   Check, 
   LogOut, 
   MessageCircle, 
+  Search,
   Send, 
   Settings, 
   UserPlus, 
@@ -17,6 +18,7 @@ import {
   login,
   register,
   requestFriend,
+  searchMessages,
 } from './services/api';
 import { connectSocket } from './services/socket';
 import ChatBubble from './components/ChatBubble';
@@ -42,6 +44,14 @@ export default function App() {
   const [activeFriend, setActiveFriend] = useState(null);
   const [socket, setSocket] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [chatMessageResults, setChatMessageResults] = useState([]);
+  const [chatSearchLoading, setChatSearchLoading] = useState(false);
+  const [chatSearchError, setChatSearchError] = useState('');
+  const [selectedSearchResult, setSelectedSearchResult] = useState(null);
+  const [chatListSearch, setChatListSearch] = useState('');
+  const [friendsSearch, setFriendsSearch] = useState('');
+  const [messageSearch, setMessageSearch] = useState('');
+  const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [draft, setDraft] = useState('');
   const [scheduledFor, setScheduledFor] = useState('');
   const [ttlSeconds, setTtlSeconds] = useState(0);
@@ -50,12 +60,15 @@ export default function App() {
   const [authLanguage, setAuthLanguage] = useState('en');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  
+
   const endOfMessages = useRef(null);
   const activeFriendRef = useRef(activeFriend);
   const friendsRef = useRef(friends);
+  const activeTabRef = useRef(activeTab);
+
   activeFriendRef.current = activeFriend;
   friendsRef.current = friends;
+  activeTabRef.current = activeTab;
 
   function addNotification(notification) {
     setNotifications((current) => [
@@ -69,7 +82,20 @@ export default function App() {
       getFriends(token),
       getFriendRequests(token),
     ]);
-    setFriends(friendResult.friends);
+    
+    setFriends((currentFriends) => {
+      const existingUnreadMap = new Map(currentFriends.map((f) => [f.id, f.unreadCount || 0]));
+      const existingLastMsgMap = new Map(currentFriends.map((f) => [f.id, f.lastMessage]));
+      const existingLastTimeMap = new Map(currentFriends.map((f) => [f.id, f.lastMessageTime]));
+
+      return friendResult.friends.map((friend) => ({
+        ...friend,
+        unreadCount: existingUnreadMap.get(friend.id) || 0,
+        lastMessage: existingLastMsgMap.get(friend.id) || '',
+        lastMessageTime: existingLastTimeMap.get(friend.id) || null,
+      }));
+    });
+
     setRequests(requestResult.requests);
     setNotifications((current) => {
       const pendingRequestIds = new Set(requestResult.requests.map((request) => request.id));
@@ -100,15 +126,41 @@ export default function App() {
     refreshContacts(session.token).catch((loadError) => {
       if (active) setError(loadError.message);
     });
+
     client.on('connect_error', (connectError) => {
       if (active) setError(connectError.message);
     });
+
     client.on('chat:message', (message) => {
-      setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+      const isCurrentActiveChat = 
+        activeFriendRef.current?.id === message.senderId && 
+        activeTabRef.current === 'chats' && 
+        document.visibilityState === 'visible';
+
+      if (activeFriendRef.current?.id === message.senderId || message.senderId === session.user.id) {
+        setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+      }
+
+      setFriends((currentFriends) =>
+        currentFriends.map((friend) => {
+          const isSender = friend.id === message.senderId;
+          if (isSender) {
+            return {
+              ...friend,
+              lastMessage: message.content,
+              lastMessageTime: message.createdAt || new Date().toISOString(),
+              unreadCount: isCurrentActiveChat ? 0 : (friend.unreadCount || 0) + 1,
+            };
+          }
+          return friend;
+        })
+      );
     });
+
     client.on('chat:message-deleted', ({ id }) => {
       setMessages((current) => current.filter((message) => message.id !== id));
     });
+
     client.on('notification:friend-request', (request) => {
       setRequests((current) => current.some((item) => item.id === request.requestId)
         ? current
@@ -131,6 +183,7 @@ export default function App() {
         read: false,
       });
     });
+
     client.on('notification:friend-accepted', (notification) => {
       addNotification({
         id: `friend-accepted:${notification.requestId}`,
@@ -141,23 +194,13 @@ export default function App() {
         read: false,
       });
     });
-    client.on('notification:new-message', (notification) => {
-      if (activeFriendRef.current?.id === notification.peerId && document.visibilityState === 'visible') return;
-      const friendName = friendsRef.current.find((friend) => friend.id === notification.peerId)?.displayName || 'New message';
-      addNotification({
-        id: `message:${notification.messageId}`,
-        kind: 'message',
-        peerId: notification.peerId,
-        title: `${friendName}: ${notification.preview}`,
-        createdAt: new Date().toISOString(),
-        read: false,
-      });
-    });
+
     client.on('friends:updated', () => {
       refreshContacts(session.token).catch((loadError) => {
         if (active) setError(loadError.message);
       });
     });
+
     return () => {
       active = false;
       client.disconnect();
@@ -174,15 +217,75 @@ export default function App() {
       if (result.error) setError(result.error);
       else {
         setError('');
-        setMessages(result.messages);
+        const selectedMessage = selectedSearchResult?.peerId === activeFriend.id
+          ? selectedSearchResult
+          : null;
+        const history = selectedMessage && !result.messages.some((message) => message.id === selectedMessage.id)
+          ? [...result.messages, selectedMessage].sort((first, second) => (
+            new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime()
+          ))
+          : result.messages;
+        setMessages(history);
       }
     });
     setShowDocument(false);
-  }, [socket, activeFriend]);
+  }, [socket, activeFriend, selectedSearchResult]);
+
+  useEffect(() => {
+    const query = chatListSearch.trim();
+    if (activeTab !== 'chats' || activeFriend || query.length < 2 || !session?.token) {
+      setChatMessageResults([]);
+      setChatSearchError('');
+      setChatSearchLoading(false);
+      return undefined;
+    }
+
+    let active = true;
+    setChatSearchLoading(true);
+    setChatSearchError('');
+    const timer = window.setTimeout(() => {
+      searchMessages(session.token, query)
+        .then((result) => {
+          if (active) setChatMessageResults(result.results);
+        })
+        .catch((searchError) => {
+          if (active) {
+            setChatMessageResults([]);
+            setChatSearchError(searchError.message);
+          }
+        })
+        .finally(() => {
+          if (active) setChatSearchLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [session?.token, activeTab, activeFriend, chatListSearch]);
 
   useEffect(() => {
     endOfMessages.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  function openChat(friend, searchResult = null) {
+    setActiveFriend(friend);
+    setActiveTab('chats');
+    setSelectedSearchResult(searchResult);
+    if (searchResult) {
+      setMessageSearch(chatListSearch);
+      setShowMessageSearch(true);
+    } else {
+      setMessageSearch('');
+      setShowMessageSearch(false);
+    }
+    setFriends((currentFriends) =>
+      currentFriends.map((item) =>
+        item.id === friend.id ? { ...item, unreadCount: 0 } : item
+      )
+    );
+  }
 
   async function handleAuth(event) {
     event.preventDefault();
@@ -217,8 +320,7 @@ export default function App() {
     const result = await acceptFriendRequest(session.token, requestId);
     await refreshContacts(session.token);
     setNotifications((current) => current.filter((item) => item.id !== `friend-request:${requestId}`));
-    setActiveFriend(result.user);
-    setActiveTab('chats');
+    openChat(result.user);
   }
 
   async function openNotification(notification) {
@@ -232,16 +334,14 @@ export default function App() {
 
     const friend = friends.find((item) => item.id === notification.peerId);
     if (friend) {
-      setActiveFriend(friend);
-      setActiveTab('chats');
+      openChat(friend);
     } else if (notification.kind === 'friend-accepted') {
       try {
         await refreshContacts(session.token);
-        setActiveFriend({
+        openChat({
           id: notification.peerId,
           displayName: notification.title.split(' accepted ')[0],
         });
-        setActiveTab('chats');
       } catch (loadError) {
         setError(loadError.message);
       }
@@ -249,6 +349,22 @@ export default function App() {
   }
 
   const unreadNotifications = notifications.filter((notification) => !notification.read).length;
+  const normalizedChatSearch = chatListSearch.trim().toLocaleLowerCase();
+  const filteredChatFriends = friends.filter((friend) => (
+    friend.displayName.toLocaleLowerCase().includes(normalizedChatSearch) ||
+    (friend.lastMessage || '').toLocaleLowerCase().includes(normalizedChatSearch)
+  ));
+  const normalizedFriendsSearch = friendsSearch.trim().toLocaleLowerCase();
+  const filteredFriends = friends.filter((friend) => (
+    friend.displayName.toLocaleLowerCase().includes(normalizedFriendsSearch)
+  ));
+  const filteredRequests = requests.filter((request) => (
+    request.user.displayName.toLocaleLowerCase().includes(normalizedFriendsSearch)
+  ));
+  const normalizedMessageSearch = messageSearch.trim().toLocaleLowerCase();
+  const filteredMessages = messages.filter((message) => (
+    message.content.toLocaleLowerCase().includes(normalizedMessageSearch)
+  ));
 
   function sendMessage(event) {
     event.preventDefault();
@@ -265,6 +381,13 @@ export default function App() {
     socket.emit(eventName, payload, (result) => {
       if (result.error) setError(result.error);
       else {
+        setFriends((currentFriends) =>
+          currentFriends.map((f) =>
+            f.id === activeFriend.id
+              ? { ...f, lastMessage: `You: ${content}`, lastMessageTime: new Date().toISOString() }
+              : f
+          )
+        );
         setDraft('');
         setScheduledFor('');
       }
@@ -329,27 +452,14 @@ export default function App() {
           </h1>
         </div>
 
-        <div className="flex items-center gap-2">
-          {activeFriend && activeTab === 'chats' ? (
-            <button 
-              className={`text-xs px-3 py-1.5 rounded-full font-medium transition ${showDocument ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`} 
-              onClick={() => setShowDocument(!showDocument)}
-            >
-              Shared notes
-            </button>
-          ) : activeTab === 'chats' ? (
-            /* POP on top right corner */
-            <div onClick={() => setActiveTab('settings')} className="flex items-center gap-2 cursor-pointer bg-slate-100 pl-2 pr-1 py-1 rounded-full hover:bg-slate-200 transition">
-              <div className="text-right leading-none">
-                <p className="text-xs font-bold text-slate-800">{session.user.displayName}</p>
-                <p className="text-[9px] text-slate-500">{session.user.friendCode}</p>
-              </div>
-              <div className="w-8 h-8 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-sm">
-                {session.user.displayName.slice(0, 1).toUpperCase()}
-              </div>
-            </div>
-          ) : null}
-        </div>
+        {activeFriend && activeTab === 'chats' && (
+          <button 
+            className={`text-xs px-3 py-1.5 rounded-full font-medium transition ${showDocument ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`} 
+            onClick={() => setShowDocument(!showDocument)}
+          >
+            Shared notes
+          </button>
+        )}
       </header>
      
 
@@ -361,6 +471,19 @@ export default function App() {
           activeFriend ? (
             /* Active Conversation View */
             <div className="flex flex-col h-full">
+              {showMessageSearch && (
+                <label className="search-field chat-message-search">
+                  <Search size={17} aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={messageSearch}
+                    onChange={(event) => setMessageSearch(event.target.value)}
+                    placeholder="Search messages in this chat"
+                    aria-label="Search messages in this chat"
+                    autoFocus
+                  />
+                </label>
+              )}
               <div className="flex-1 p-4 overflow-y-auto space-y-3">
                 {messages.length === 0 && (
                   <div className="text-center text-slate-400 my-auto py-12">
@@ -368,7 +491,10 @@ export default function App() {
                     <p className="text-sm">Say hello to {activeFriend.displayName}!</p>
                   </div>
                 )}
-                {messages.map((message) => (
+                {messages.length > 0 && filteredMessages.length === 0 && (
+                  <p className="search-empty">No messages match “{messageSearch}”.</p>
+                )}
+                {filteredMessages.map((message) => (
                   <ChatBubble 
                     key={message.id} 
                     message={message} 
@@ -404,7 +530,6 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Optional Controls */}
                 <div className="flex items-center justify-between text-xs text-slate-500 px-1">
                   <input
                     type="datetime-local"
@@ -429,9 +554,8 @@ export default function App() {
               </form>
             </div>
           ) : (
-                        /* Friends / Recent Conversations List */
-                        <div className="divide-y divide-slate-100 bg-white">
-
+            /* Friends / Recent Conversations List */
+            <div className="divide-y divide-slate-100 bg-white">
               {friends.length === 0 ? (
                 <div className="text-center p-8 text-slate-400">
                   <Users size={36} className="mx-auto mb-2 opacity-40" />
@@ -443,23 +567,80 @@ export default function App() {
                     Add a friend to start chatting
                   </button>
                 </div>
+              ) : filteredChatFriends.length === 0 && chatMessageResults.length === 0 && !chatSearchLoading ? (
+                <p className="search-empty">No chats match “{chatListSearch}”.</p>
               ) : (
-                friends.map((friend) => (
-                  <button
-                    key={friend.id}
-                    onClick={() => setActiveFriend(friend)}
-                    className="w-full flex items-center space-x-3 p-4 hover:bg-slate-50 transition text-left"
-                  >
-                    <div className="w-12 h-12 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-lg">
-                      {friend.displayName.slice(0, 1).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-slate-800 text-sm truncate">{friend.displayName}</h4>
-                      <p className="text-xs text-slate-400 truncate">Tap to start conversation</p>
-                    </div>
-                  </button>
-                ))
+                filteredChatFriends.map((friend) => {
+                  const hasUnread = friend.unreadCount > 0;
+                  return (
+                    <button
+                      key={friend.id}
+                      onClick={() => openChat(friend)}
+                      className="w-full flex items-center space-x-3 p-4 hover:bg-slate-50 transition text-left"
+                    >
+                      <div className="relative shrink-0">
+                        <div className="w-12 h-12 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-lg">
+                          {friend.displayName.slice(0, 1).toUpperCase()}
+                        </div>
+                        <span className="w-3 h-3 bg-green-500 border-2 border-white rounded-full absolute bottom-0 right-0"></span>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-baseline mb-1">
+                          {/* Bold display name if unread */}
+                          <h4 className={`text-sm truncate ${hasUnread ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'}`}>
+                            {friend.displayName}
+                          </h4>
+                          {friend.lastMessageTime && (
+                            <span className={`text-[10px] shrink-0 ml-2 ${hasUnread ? 'font-bold text-green-600' : 'text-slate-400'}`}>
+                              {new Date(friend.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
+                        {/* Bold message preview text if unread */}
+                        <p className={`text-xs truncate ${hasUnread ? 'font-bold text-slate-900' : 'text-slate-500'}`}>
+                          {friend.lastMessage || 'Tap to start conversation'}
+                        </p>
+                      </div>
+
+                      {/* Black number inside green unread counter badge */}
+                      {hasUnread && (
+                        <span className="ml-2 bg-green-500 text-slate-950 text-[11px] font-extrabold px-2 py-0.5 rounded-full min-w-[20px] text-center shrink-0 shadow-sm">
+                          {friend.unreadCount > 99 ? '99+' : friend.unreadCount}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })
               )}
+              {chatListSearch.trim().length >= 2 && (
+                <section className="chat-search-results">
+                  <h3>Messages matching “{chatListSearch.trim()}”</h3>
+                  {chatSearchLoading && <p className="search-empty">Searching messages…</p>}
+                  {chatSearchError && <p className="search-error">{chatSearchError}</p>}
+                  {!chatSearchLoading && !chatSearchError && chatMessageResults.length === 0 && (
+                    <p className="search-empty">No matching messages found.</p>
+                  )}
+                  {chatMessageResults.map((result) => (
+                    <button
+                      type="button"
+                      key={result.id}
+                      className="chat-search-result"
+                      onClick={() => openChat(
+                        { id: result.peerId, displayName: result.peerName },
+                        result,
+                      )}
+                    >
+                      <span className="chat-search-result-heading">
+                        <strong>{result.peerName}</strong>
+                        <time>{new Date(result.createdAt).toLocaleString()}</time>
+                      </span>
+                      <span className="chat-search-result-text">{result.content}</span>
+                    </button>
+                  ))}
+                </section>
+              )}
+              </div>
             </div>
           )
         )}
@@ -467,19 +648,27 @@ export default function App() {
         {/* 2. FRIENDS & REQUESTS TAB */}
         {activeTab === 'friends' && (
           <div className="p-4 space-y-6">
-            {/* Add Friend Section */}
+            <label className="search-field">
+              <Search size={17} aria-hidden="true" />
+              <input
+                type="search"
+                value={friendsSearch}
+                onChange={(event) => setFriendsSearch(event.target.value)}
+                placeholder="Search friends and requests"
+                aria-label="Search friends and friend requests"
+              />
+            </label>
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Add Friend</h3>
               <FriendRequest onSubmit={handleFriendRequest} />
             </div>
 
-            {/* Pending Requests */}
-            {requests.length > 0 && (
+            {filteredRequests.length > 0 && (
               <div className="space-y-2">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  Pending Requests ({requests.length})
+                  Pending Requests ({filteredRequests.length})
                 </h3>
-                {requests.map((request) => (
+                {filteredRequests.map((request) => (
                   <div key={request.id} className="bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between shadow-sm">
                     <span className="font-medium text-sm text-slate-800">{request.user.displayName}</span>
                     <button 
@@ -493,23 +682,25 @@ export default function App() {
               </div>
             )}
 
-            {/* Friends List */}
             <div className="space-y-2">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                My Friends ({friends.length})
+                My Friends ({filteredFriends.length})
               </h3>
               <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-                {friends.map((friend) => (
+                {filteredFriends.map((friend) => (
                   <div key={friend.id} className="p-3 flex items-center justify-between">
                     <span className="font-medium text-sm text-slate-800">{friend.displayName}</span>
                     <button 
-                      onClick={() => { setActiveFriend(friend); setActiveTab('chats'); }}
+                      onClick={() => openChat(friend)}
                       className="text-xs text-indigo-600 font-semibold"
                     >
                       Chat
                     </button>
                   </div>
                 ))}
+                {filteredFriends.length === 0 && (
+                  <p className="search-empty">No friends match “{friendsSearch}”.</p>
+                )}
               </div>
             </div>
           </div>
@@ -601,8 +792,6 @@ export default function App() {
 
       {/* WHATSAPP-STYLE BOTTOM NAVIGATION BAR */}
       <nav className="h-16 bg-white border-t border-slate-200 flex items-center justify-around shrink-0">
-        
-        {/* Chats Tab Button */}
         <button 
           onClick={() => { setActiveTab('chats'); setActiveFriend(null); }}
           className={`flex flex-col items-center justify-center w-full h-full transition ${activeTab === 'chats' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
@@ -611,7 +800,6 @@ export default function App() {
           <span className="text-[10px] font-medium mt-1">Chats</span>
         </button>
 
-        {/* Friends & Requests Tab Button */}
         <button 
           onClick={() => setActiveTab('friends')}
           className={`flex flex-col items-center justify-center w-full h-full transition relative ${activeTab === 'friends' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
@@ -623,7 +811,6 @@ export default function App() {
           )}
         </button>
 
-        {/* Notifications Tab Button */}
         <button 
           onClick={() => setActiveTab('notifications')}
           className={`flex flex-col items-center justify-center w-full h-full transition relative ${activeTab === 'notifications' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
@@ -635,7 +822,6 @@ export default function App() {
           )}
         </button>
 
-        {/* Settings Tab Button */}
         <button 
           onClick={() => setActiveTab('settings')}
           className={`flex flex-col items-center justify-center w-full h-full transition ${activeTab === 'settings' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
@@ -643,7 +829,6 @@ export default function App() {
           <Settings size={20} />
           <span className="text-[10px] font-medium mt-1">Settings</span>
         </button>
-
       </nav>
 
     </div>
