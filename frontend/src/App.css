@@ -298,6 +298,14 @@ body > #root > .max-w-md {
 }
 
 .max-w-md > header { min-height: 56px; }
+.app-header-title { flex: 1; min-width: 0; }
+.app-header-title h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.header-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; margin-left: 8px; }
+.header-profile { display: flex; min-width: 0; max-width: 126px; align-items: center; gap: 7px; padding: 3px 8px 3px 3px; border: 0; border-radius: 9999px; color: #334155; background: #f1f5f9; }
+.header-profile:hover { background: #e8eafc; }
+.header-profile:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+.header-profile-avatar { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 50%; color: #fff; background: #4f46e5; font-size: 12px; font-weight: 700; }
+.header-profile-name { overflow: hidden; max-width: 78px; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .max-w-md > main { min-height: 0; }
 .max-w-md input, .max-w-md select { font: inherit; color: inherit; }
 .max-w-md main form input {
@@ -478,6 +486,11 @@ body > #root > .max-w-md {
   .max-w-md > header { padding-right: .75rem; padding-left: .75rem; }
   .max-w-md > nav button svg { width: 18px; height: 18px; }
   .max-w-md main form input[type="datetime-local"] { font-size: 10px; }
+}
+
+@media (max-width: 420px) {
+  .header-profile { padding-right: 3px; }
+  .header-profile-name { display: none; }
 }
 
 /* Complete utilities used by the latest mobile App.jsx layout. */

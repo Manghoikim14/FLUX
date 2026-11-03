@@ -481,8 +481,8 @@ export default function App() {
     <div className="flex flex-col h-screen bg-slate-100 font-sans max-w-md mx-auto shadow-2xl overflow-hidden border-x border-slate-200">
       
       {/* HEADER BAR */}
-      <header className="px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
-        <div className="flex items-center space-x-2">
+      <header className="app-header px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
+        <div className="app-header-title flex items-center space-x-2">
           {activeFriend && activeTab === 'chats' ? (
             <button onClick={() => setActiveFriend(null)} className="p-1 rounded-full hover:bg-slate-100 text-slate-600 mr-1">
               <ArrowLeft size={20} />
@@ -518,32 +518,46 @@ export default function App() {
                 <Search size={18} />
               </button>
             ) : (
-              <>
-                <button
-                  type="button"
-                  className={`p-2 rounded-full transition ${showMessageSearch ? 'bg-indigo-100 text-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
-                  onClick={() => {
-                    setShowMessageSearch((isVisible) => {
-                      if (isVisible) setMessageSearch('');
-                      return !isVisible;
-                    });
-                  }}
-                  aria-label={showMessageSearch ? 'Close message search' : 'Search messages'}
-                  aria-pressed={showMessageSearch}
-                  title={showMessageSearch ? 'Close message search' : 'Search messages'}
-                >
-                  <Search size={18} />
-                </button>
-                <button
-                  className={`text-xs px-3 py-1.5 rounded-full font-medium transition ${showDocument ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
-                  onClick={() => setShowDocument(!showDocument)}
-                >
-                  Shared notes
-                </button>
-              </>
+              <button
+                type="button"
+                className={`p-2 rounded-full transition ${showMessageSearch ? 'bg-indigo-100 text-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
+                onClick={() => {
+                  setShowMessageSearch((isVisible) => {
+                    if (isVisible) setMessageSearch('');
+                    return !isVisible;
+                  });
+                }}
+                aria-label={showMessageSearch ? 'Close message search' : 'Search messages'}
+                aria-pressed={showMessageSearch}
+                title={showMessageSearch ? 'Close message search' : 'Search messages'}
+              >
+                <Search size={18} />
+              </button>
+            )}
+            {activeFriend && (
+              <button
+                className={`text-xs px-3 py-1.5 rounded-full font-medium transition ${showDocument ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+                onClick={() => setShowDocument(!showDocument)}
+              >
+                Shared notes
+              </button>
             )}
           </div>
         )}
+        <div className="header-actions">
+          <button
+            type="button"
+            className="header-profile"
+            onClick={() => setActiveTab('settings')}
+            aria-label={`Open ${session.user.displayName}'s profile`}
+            title={session.user.displayName}
+          >
+            <span className="header-profile-avatar" aria-hidden="true">
+              {session.user.displayName.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="header-profile-name">{session.user.displayName}</span>
+          </button>
+        </div>
       </header>
      
 
