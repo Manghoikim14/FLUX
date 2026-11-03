@@ -5,7 +5,6 @@ CHAT APP - MASTER SYSTEM PROMPT & ARCHITECTURE CONTRACT
 ===================================================================
 
 
-
 1. PROJECT OVERVIEW & CORE ARCHITECTURE
 
    - Objective: Private, real-time chat application with Friend Code pairing, 

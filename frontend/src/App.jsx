@@ -311,7 +311,7 @@ export default function App() {
     <div className="flex flex-col h-screen bg-slate-100 font-sans max-w-md mx-auto shadow-2xl overflow-hidden border-x border-slate-200">
       
       {/* HEADER BAR */}
-      <header className="px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
+            <header className="px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
         <div className="flex items-center space-x-2">
           {activeFriend && activeTab === 'chats' ? (
             <button onClick={() => setActiveFriend(null)} className="p-1 rounded-full hover:bg-slate-100 text-slate-600 mr-1">
@@ -329,15 +329,29 @@ export default function App() {
           </h1>
         </div>
 
-        {activeFriend && activeTab === 'chats' && (
-          <button 
-            className={`text-xs px-3 py-1.5 rounded-full font-medium transition ${showDocument ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`} 
-            onClick={() => setShowDocument(!showDocument)}
-          >
-            Shared notes
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {activeFriend && activeTab === 'chats' ? (
+            <button 
+              className={`text-xs px-3 py-1.5 rounded-full font-medium transition ${showDocument ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`} 
+              onClick={() => setShowDocument(!showDocument)}
+            >
+              Shared notes
+            </button>
+          ) : activeTab === 'chats' ? (
+            /* POP on top right corner */
+            <div onClick={() => setActiveTab('settings')} className="flex items-center gap-2 cursor-pointer bg-slate-100 pl-2 pr-1 py-1 rounded-full hover:bg-slate-200 transition">
+              <div className="text-right leading-none">
+                <p className="text-xs font-bold text-slate-800">{session.user.displayName}</p>
+                <p className="text-[9px] text-slate-500">{session.user.friendCode}</p>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-sm">
+                {session.user.displayName.slice(0, 1).toUpperCase()}
+              </div>
+            </div>
+          ) : null}
+        </div>
       </header>
+     
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 overflow-y-auto bg-slate-50 relative">
@@ -415,8 +429,9 @@ export default function App() {
               </form>
             </div>
           ) : (
-            /* Friends / Recent Conversations List */
-            <div className="divide-y divide-slate-100 bg-white">
+                        /* Friends / Recent Conversations List */
+                        <div className="divide-y divide-slate-100 bg-white">
+
               {friends.length === 0 ? (
                 <div className="text-center p-8 text-slate-400">
                   <Users size={36} className="mx-auto mb-2 opacity-40" />
