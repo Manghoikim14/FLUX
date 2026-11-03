@@ -26,6 +26,7 @@ export const login = (data) => request('/auth/login', {
 
 export const getFriends = (token) => request('/friends', { token });
 export const getFriendRequests = (token) => request('/friends/requests', { token });
+export const getSentFriendRequests = (token) => request('/friends/requests/sent', { token });
 export const searchMessages = (token, query) => request(`/friends/search/messages?q=${encodeURIComponent(query)}`, { token });
 
 export const requestFriend = (token, friendCode) => request('/friends/request', {
@@ -35,6 +36,11 @@ export const requestFriend = (token, friendCode) => request('/friends/request', 
 });
 
 export const acceptFriendRequest = (token, requestId) => request(`/friends/requests/${requestId}/accept`, {
+  method: 'POST',
+  token,
+});
+
+export const rejectFriendRequest = (token, requestId) => request(`/friends/requests/${requestId}/reject`, {
   method: 'POST',
   token,
 });

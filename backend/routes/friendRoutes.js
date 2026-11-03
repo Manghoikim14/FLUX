@@ -78,6 +78,31 @@ router.get('/requests', async (req, res, next) => {
   }
 });
 
+router.get('/requests/sent', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT fr.id, fr.created_at, fr.status,
+              u.id AS user_id, u.display_name
+       FROM friend_requests fr
+       JOIN users u ON u.id = fr.recipient_id
+       WHERE fr.sender_id = $1
+       ORDER BY fr.created_at DESC
+       LIMIT 50`,
+      [req.user.id],
+    );
+    return res.json({
+      requests: result.rows.map((row) => ({
+        id: row.id,
+        createdAt: row.created_at,
+        status: row.status,
+        user: { id: row.user_id, displayName: row.display_name },
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/search/messages', async (req, res, next) => {
   const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   if (query.length < 2 || query.length > 100) {
@@ -168,6 +193,37 @@ router.post('/requests/:requestId/accept', async (req, res, next) => {
     next(error);
   } finally {
     client.release();
+  }
+});
+
+router.post('/requests/:requestId/reject', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `UPDATE friend_requests
+       SET status = 'declined'
+       WHERE id = $1 AND recipient_id = $2 AND status = 'pending'
+       RETURNING id, sender_id`,
+      [req.params.requestId, req.user.id],
+    );
+    if (!result.rowCount) {
+      return res.status(404).json({ error: 'Pending friend request not found.' });
+    }
+
+    const recipientResult = await pool.query(
+      'SELECT display_name FROM users WHERE id = $1',
+      [req.user.id],
+    );
+    const io = req.app.get('io');
+    io.to(`user:${result.rows[0].sender_id}`).emit('notification:friend-rejected', {
+      requestId: result.rows[0].id,
+      peerId: req.user.id,
+      displayName: recipientResult.rows[0].display_name,
+      createdAt: new Date().toISOString(),
+    });
+    io.to(`user:${result.rows[0].sender_id}`).emit('friends:updated');
+    return res.json({ requestId: result.rows[0].id, status: 'declined' });
+  } catch (error) {
+    next(error);
   }
 });
 
