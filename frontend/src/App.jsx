@@ -480,7 +480,7 @@ export default function App() {
     <div className="flex flex-col h-screen bg-slate-100 font-sans max-w-md mx-auto shadow-2xl overflow-hidden border-x border-slate-200">
       
       {/* HEADER BAR */}
-      <header className="px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
+            <header className="px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
         <div className="flex items-center space-x-2">
           {activeFriend && activeTab === 'chats' ? (
             <button onClick={() => setActiveFriend(null)} className="p-1 rounded-full hover:bg-slate-100 text-slate-600 mr-1">
@@ -499,25 +499,15 @@ export default function App() {
         </div>
 
         {activeFriend && activeTab === 'chats' && (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowMessageSearch((shown) => !shown)}
-              className="chat-search-toggle"
-              aria-label={showMessageSearch ? 'Close message search' : 'Search messages'}
-              aria-expanded={showMessageSearch}
-            >
-              <Search size={18} />
-            </button>
-            <button
-              className={`text-xs px-3 py-1.5 rounded-full font-medium transition ${showDocument ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
-              onClick={() => setShowDocument(!showDocument)}
-            >
-              Shared notes
-            </button>
-          </div>
+          <button 
+            className={`text-xs px-3 py-1.5 rounded-full font-medium transition ${showDocument ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`} 
+            onClick={() => setShowDocument(!showDocument)}
+          >
+            Shared notes
+          </button>
         )}
       </header>
+     
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 overflow-y-auto bg-slate-50 relative">
@@ -737,19 +727,8 @@ export default function App() {
               </form>
             </div>
           ) : (
-            /* Friends / Active Conversation List */
-            <div className="bg-white">
-              <label className="search-field">
-                <Search size={17} aria-hidden="true" />
-                <input
-                  type="search"
-                  value={chatListSearch}
-                  onChange={(event) => setChatListSearch(event.target.value)}
-                  placeholder="Search chats or messages"
-                  aria-label="Search chats or message previews"
-                />
-              </label>
-              <div className="divide-y divide-slate-100">
+            /* Friends / Recent Conversations List */
+            <div className="divide-y divide-slate-100 bg-white">
               {friends.length === 0 ? (
                 <div className="text-center p-8 text-slate-400">
                   <Users size={36} className="mx-auto mb-2 opacity-40" />
