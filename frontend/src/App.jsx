@@ -5,6 +5,7 @@ import {
   Check, 
   LogOut, 
   MessageCircle, 
+  Search,
   Send, 
   Settings, 
   UserPlus, 
@@ -17,6 +18,7 @@ import {
   login,
   register,
   requestFriend,
+  searchMessages,
 } from './services/api';
 import { connectSocket } from './services/socket';
 import ChatBubble from './components/ChatBubble';
@@ -42,6 +44,14 @@ export default function App() {
   const [activeFriend, setActiveFriend] = useState(null);
   const [socket, setSocket] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [chatMessageResults, setChatMessageResults] = useState([]);
+  const [chatSearchLoading, setChatSearchLoading] = useState(false);
+  const [chatSearchError, setChatSearchError] = useState('');
+  const [selectedSearchResult, setSelectedSearchResult] = useState(null);
+  const [chatListSearch, setChatListSearch] = useState('');
+  const [friendsSearch, setFriendsSearch] = useState('');
+  const [messageSearch, setMessageSearch] = useState('');
+  const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [draft, setDraft] = useState('');
   const [scheduledFor, setScheduledFor] = useState('');
   const [ttlSeconds, setTtlSeconds] = useState(0);
@@ -207,19 +217,69 @@ export default function App() {
       if (result.error) setError(result.error);
       else {
         setError('');
-        setMessages(result.messages);
+        const selectedMessage = selectedSearchResult?.peerId === activeFriend.id
+          ? selectedSearchResult
+          : null;
+        const history = selectedMessage && !result.messages.some((message) => message.id === selectedMessage.id)
+          ? [...result.messages, selectedMessage].sort((first, second) => (
+            new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime()
+          ))
+          : result.messages;
+        setMessages(history);
       }
     });
     setShowDocument(false);
-  }, [socket, activeFriend]);
+  }, [socket, activeFriend, selectedSearchResult]);
+
+  useEffect(() => {
+    const query = chatListSearch.trim();
+    if (activeTab !== 'chats' || activeFriend || query.length < 2 || !session?.token) {
+      setChatMessageResults([]);
+      setChatSearchError('');
+      setChatSearchLoading(false);
+      return undefined;
+    }
+
+    let active = true;
+    setChatSearchLoading(true);
+    setChatSearchError('');
+    const timer = window.setTimeout(() => {
+      searchMessages(session.token, query)
+        .then((result) => {
+          if (active) setChatMessageResults(result.results);
+        })
+        .catch((searchError) => {
+          if (active) {
+            setChatMessageResults([]);
+            setChatSearchError(searchError.message);
+          }
+        })
+        .finally(() => {
+          if (active) setChatSearchLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [session?.token, activeTab, activeFriend, chatListSearch]);
 
   useEffect(() => {
     endOfMessages.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function openChat(friend) {
+  function openChat(friend, searchResult = null) {
     setActiveFriend(friend);
     setActiveTab('chats');
+    setSelectedSearchResult(searchResult);
+    if (searchResult) {
+      setMessageSearch(chatListSearch);
+      setShowMessageSearch(true);
+    } else {
+      setMessageSearch('');
+      setShowMessageSearch(false);
+    }
     setFriends((currentFriends) =>
       currentFriends.map((item) =>
         item.id === friend.id ? { ...item, unreadCount: 0 } : item
@@ -289,6 +349,22 @@ export default function App() {
   }
 
   const unreadNotifications = notifications.filter((notification) => !notification.read).length;
+  const normalizedChatSearch = chatListSearch.trim().toLocaleLowerCase();
+  const filteredChatFriends = friends.filter((friend) => (
+    friend.displayName.toLocaleLowerCase().includes(normalizedChatSearch) ||
+    (friend.lastMessage || '').toLocaleLowerCase().includes(normalizedChatSearch)
+  ));
+  const normalizedFriendsSearch = friendsSearch.trim().toLocaleLowerCase();
+  const filteredFriends = friends.filter((friend) => (
+    friend.displayName.toLocaleLowerCase().includes(normalizedFriendsSearch)
+  ));
+  const filteredRequests = requests.filter((request) => (
+    request.user.displayName.toLocaleLowerCase().includes(normalizedFriendsSearch)
+  ));
+  const normalizedMessageSearch = messageSearch.trim().toLocaleLowerCase();
+  const filteredMessages = messages.filter((message) => (
+    message.content.toLocaleLowerCase().includes(normalizedMessageSearch)
+  ));
 
   function sendMessage(event) {
     event.preventDefault();
@@ -377,12 +453,23 @@ export default function App() {
         </div>
 
         {activeFriend && activeTab === 'chats' && (
-          <button 
-            className={`text-xs px-3 py-1.5 rounded-full font-medium transition ${showDocument ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`} 
-            onClick={() => setShowDocument(!showDocument)}
-          >
-            Shared notes
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowMessageSearch((shown) => !shown)}
+              className="chat-search-toggle"
+              aria-label={showMessageSearch ? 'Close message search' : 'Search messages'}
+              aria-expanded={showMessageSearch}
+            >
+              <Search size={18} />
+            </button>
+            <button
+              className={`text-xs px-3 py-1.5 rounded-full font-medium transition ${showDocument ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+              onClick={() => setShowDocument(!showDocument)}
+            >
+              Shared notes
+            </button>
+          </div>
         )}
       </header>
 
@@ -394,6 +481,19 @@ export default function App() {
           activeFriend ? (
             /* Active Conversation View */
             <div className="flex flex-col h-full">
+              {showMessageSearch && (
+                <label className="search-field chat-message-search">
+                  <Search size={17} aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={messageSearch}
+                    onChange={(event) => setMessageSearch(event.target.value)}
+                    placeholder="Search messages in this chat"
+                    aria-label="Search messages in this chat"
+                    autoFocus
+                  />
+                </label>
+              )}
               <div className="flex-1 p-4 overflow-y-auto space-y-3">
                 {messages.length === 0 && (
                   <div className="text-center text-slate-400 my-auto py-12">
@@ -401,7 +501,10 @@ export default function App() {
                     <p className="text-sm">Say hello to {activeFriend.displayName}!</p>
                   </div>
                 )}
-                {messages.map((message) => (
+                {messages.length > 0 && filteredMessages.length === 0 && (
+                  <p className="search-empty">No messages match “{messageSearch}”.</p>
+                )}
+                {filteredMessages.map((message) => (
                   <ChatBubble 
                     key={message.id} 
                     message={message} 
@@ -462,7 +565,18 @@ export default function App() {
             </div>
           ) : (
             /* Friends / Active Conversation List */
-            <div className="divide-y divide-slate-100 bg-white">
+            <div className="bg-white">
+              <label className="search-field">
+                <Search size={17} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={chatListSearch}
+                  onChange={(event) => setChatListSearch(event.target.value)}
+                  placeholder="Search chats or messages"
+                  aria-label="Search chats or message previews"
+                />
+              </label>
+              <div className="divide-y divide-slate-100">
               {friends.length === 0 ? (
                 <div className="text-center p-8 text-slate-400">
                   <Users size={36} className="mx-auto mb-2 opacity-40" />
@@ -474,8 +588,10 @@ export default function App() {
                     Add a friend to start chatting
                   </button>
                 </div>
+              ) : filteredChatFriends.length === 0 && chatMessageResults.length === 0 && !chatSearchLoading ? (
+                <p className="search-empty">No chats match “{chatListSearch}”.</p>
               ) : (
-                friends.map((friend) => {
+                filteredChatFriends.map((friend) => {
                   const hasUnread = friend.unreadCount > 0;
                   return (
                     <button
@@ -518,6 +634,34 @@ export default function App() {
                   );
                 })
               )}
+              {chatListSearch.trim().length >= 2 && (
+                <section className="chat-search-results">
+                  <h3>Messages matching “{chatListSearch.trim()}”</h3>
+                  {chatSearchLoading && <p className="search-empty">Searching messages…</p>}
+                  {chatSearchError && <p className="search-error">{chatSearchError}</p>}
+                  {!chatSearchLoading && !chatSearchError && chatMessageResults.length === 0 && (
+                    <p className="search-empty">No matching messages found.</p>
+                  )}
+                  {chatMessageResults.map((result) => (
+                    <button
+                      type="button"
+                      key={result.id}
+                      className="chat-search-result"
+                      onClick={() => openChat(
+                        { id: result.peerId, displayName: result.peerName },
+                        result,
+                      )}
+                    >
+                      <span className="chat-search-result-heading">
+                        <strong>{result.peerName}</strong>
+                        <time>{new Date(result.createdAt).toLocaleString()}</time>
+                      </span>
+                      <span className="chat-search-result-text">{result.content}</span>
+                    </button>
+                  ))}
+                </section>
+              )}
+              </div>
             </div>
           )
         )}
@@ -525,17 +669,27 @@ export default function App() {
         {/* 2. FRIENDS & REQUESTS TAB */}
         {activeTab === 'friends' && (
           <div className="p-4 space-y-6">
+            <label className="search-field">
+              <Search size={17} aria-hidden="true" />
+              <input
+                type="search"
+                value={friendsSearch}
+                onChange={(event) => setFriendsSearch(event.target.value)}
+                placeholder="Search friends and requests"
+                aria-label="Search friends and friend requests"
+              />
+            </label>
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Add Friend</h3>
               <FriendRequest onSubmit={handleFriendRequest} />
             </div>
 
-            {requests.length > 0 && (
+            {filteredRequests.length > 0 && (
               <div className="space-y-2">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  Pending Requests ({requests.length})
+                  Pending Requests ({filteredRequests.length})
                 </h3>
-                {requests.map((request) => (
+                {filteredRequests.map((request) => (
                   <div key={request.id} className="bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between shadow-sm">
                     <span className="font-medium text-sm text-slate-800">{request.user.displayName}</span>
                     <button 
@@ -551,10 +705,10 @@ export default function App() {
 
             <div className="space-y-2">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                My Friends ({friends.length})
+                My Friends ({filteredFriends.length})
               </h3>
               <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-                {friends.map((friend) => (
+                {filteredFriends.map((friend) => (
                   <div key={friend.id} className="p-3 flex items-center justify-between">
                     <span className="font-medium text-sm text-slate-800">{friend.displayName}</span>
                     <button 
@@ -565,6 +719,9 @@ export default function App() {
                     </button>
                   </div>
                 ))}
+                {filteredFriends.length === 0 && (
+                  <p className="search-empty">No friends match “{friendsSearch}”.</p>
+                )}
               </div>
             </div>
           </div>

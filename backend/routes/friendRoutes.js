@@ -78,6 +78,47 @@ router.get('/requests', async (req, res, next) => {
   }
 });
 
+router.get('/search/messages', async (req, res, next) => {
+  const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (query.length < 2 || query.length > 100) {
+    return res.status(400).json({ error: 'Search text must be between 2 and 100 characters.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT m.id, m.sender_id, m.recipient_id, m.content, m.created_at,
+              peer.id AS peer_id, peer.display_name AS peer_name
+       FROM messages m
+       JOIN users peer
+         ON peer.id = CASE WHEN m.sender_id = $1 THEN m.recipient_id ELSE m.sender_id END
+       JOIN friendships f
+         ON f.user_low = LEAST(m.sender_id, m.recipient_id)
+        AND f.user_high = GREATEST(m.sender_id, m.recipient_id)
+       WHERE (m.sender_id = $1 OR m.recipient_id = $1)
+         AND (m.expires_at IS NULL OR m.expires_at > NOW())
+         AND (m.scheduled_for IS NULL OR m.scheduled_for <= NOW())
+         AND STRPOS(LOWER(m.content), LOWER($2)) > 0
+       ORDER BY m.created_at DESC
+       LIMIT 100`,
+      [req.user.id, query],
+    );
+
+    return res.json({
+      results: result.rows.map((row) => ({
+        id: row.id,
+        senderId: row.sender_id,
+        recipientId: row.recipient_id,
+        content: row.content,
+        createdAt: row.created_at,
+        peerId: row.peer_id,
+        peerName: row.peer_name,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/requests/:requestId/accept', async (req, res, next) => {
   const client = await pool.connect();
   try {
