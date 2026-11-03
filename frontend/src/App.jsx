@@ -50,12 +50,15 @@ export default function App() {
   const [authLanguage, setAuthLanguage] = useState('en');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  
+
   const endOfMessages = useRef(null);
   const activeFriendRef = useRef(activeFriend);
   const friendsRef = useRef(friends);
+  const activeTabRef = useRef(activeTab);
+
   activeFriendRef.current = activeFriend;
   friendsRef.current = friends;
+  activeTabRef.current = activeTab;
 
   function addNotification(notification) {
     setNotifications((current) => [
@@ -69,7 +72,20 @@ export default function App() {
       getFriends(token),
       getFriendRequests(token),
     ]);
-    setFriends(friendResult.friends);
+    
+    setFriends((currentFriends) => {
+      const existingUnreadMap = new Map(currentFriends.map((f) => [f.id, f.unreadCount || 0]));
+      const existingLastMsgMap = new Map(currentFriends.map((f) => [f.id, f.lastMessage]));
+      const existingLastTimeMap = new Map(currentFriends.map((f) => [f.id, f.lastMessageTime]));
+
+      return friendResult.friends.map((friend) => ({
+        ...friend,
+        unreadCount: existingUnreadMap.get(friend.id) || 0,
+        lastMessage: existingLastMsgMap.get(friend.id) || '',
+        lastMessageTime: existingLastTimeMap.get(friend.id) || null,
+      }));
+    });
+
     setRequests(requestResult.requests);
     setNotifications((current) => {
       const pendingRequestIds = new Set(requestResult.requests.map((request) => request.id));
@@ -100,15 +116,41 @@ export default function App() {
     refreshContacts(session.token).catch((loadError) => {
       if (active) setError(loadError.message);
     });
+
     client.on('connect_error', (connectError) => {
       if (active) setError(connectError.message);
     });
+
     client.on('chat:message', (message) => {
-      setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+      const isCurrentActiveChat = 
+        activeFriendRef.current?.id === message.senderId && 
+        activeTabRef.current === 'chats' && 
+        document.visibilityState === 'visible';
+
+      if (activeFriendRef.current?.id === message.senderId || message.senderId === session.user.id) {
+        setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+      }
+
+      setFriends((currentFriends) =>
+        currentFriends.map((friend) => {
+          const isSender = friend.id === message.senderId;
+          if (isSender) {
+            return {
+              ...friend,
+              lastMessage: message.content,
+              lastMessageTime: message.createdAt || new Date().toISOString(),
+              unreadCount: isCurrentActiveChat ? 0 : (friend.unreadCount || 0) + 1,
+            };
+          }
+          return friend;
+        })
+      );
     });
+
     client.on('chat:message-deleted', ({ id }) => {
       setMessages((current) => current.filter((message) => message.id !== id));
     });
+
     client.on('notification:friend-request', (request) => {
       setRequests((current) => current.some((item) => item.id === request.requestId)
         ? current
@@ -131,6 +173,7 @@ export default function App() {
         read: false,
       });
     });
+
     client.on('notification:friend-accepted', (notification) => {
       addNotification({
         id: `friend-accepted:${notification.requestId}`,
@@ -141,23 +184,13 @@ export default function App() {
         read: false,
       });
     });
-    client.on('notification:new-message', (notification) => {
-      if (activeFriendRef.current?.id === notification.peerId && document.visibilityState === 'visible') return;
-      const friendName = friendsRef.current.find((friend) => friend.id === notification.peerId)?.displayName || 'New message';
-      addNotification({
-        id: `message:${notification.messageId}`,
-        kind: 'message',
-        peerId: notification.peerId,
-        title: `${friendName}: ${notification.preview}`,
-        createdAt: new Date().toISOString(),
-        read: false,
-      });
-    });
+
     client.on('friends:updated', () => {
       refreshContacts(session.token).catch((loadError) => {
         if (active) setError(loadError.message);
       });
     });
+
     return () => {
       active = false;
       client.disconnect();
@@ -183,6 +216,16 @@ export default function App() {
   useEffect(() => {
     endOfMessages.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  function openChat(friend) {
+    setActiveFriend(friend);
+    setActiveTab('chats');
+    setFriends((currentFriends) =>
+      currentFriends.map((item) =>
+        item.id === friend.id ? { ...item, unreadCount: 0 } : item
+      )
+    );
+  }
 
   async function handleAuth(event) {
     event.preventDefault();
@@ -217,8 +260,7 @@ export default function App() {
     const result = await acceptFriendRequest(session.token, requestId);
     await refreshContacts(session.token);
     setNotifications((current) => current.filter((item) => item.id !== `friend-request:${requestId}`));
-    setActiveFriend(result.user);
-    setActiveTab('chats');
+    openChat(result.user);
   }
 
   async function openNotification(notification) {
@@ -232,16 +274,14 @@ export default function App() {
 
     const friend = friends.find((item) => item.id === notification.peerId);
     if (friend) {
-      setActiveFriend(friend);
-      setActiveTab('chats');
+      openChat(friend);
     } else if (notification.kind === 'friend-accepted') {
       try {
         await refreshContacts(session.token);
-        setActiveFriend({
+        openChat({
           id: notification.peerId,
           displayName: notification.title.split(' accepted ')[0],
         });
-        setActiveTab('chats');
       } catch (loadError) {
         setError(loadError.message);
       }
@@ -265,6 +305,13 @@ export default function App() {
     socket.emit(eventName, payload, (result) => {
       if (result.error) setError(result.error);
       else {
+        setFriends((currentFriends) =>
+          currentFriends.map((f) =>
+            f.id === activeFriend.id
+              ? { ...f, lastMessage: `You: ${content}`, lastMessageTime: new Date().toISOString() }
+              : f
+          )
+        );
         setDraft('');
         setScheduledFor('');
       }
@@ -390,7 +437,6 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Optional Controls */}
                 <div className="flex items-center justify-between text-xs text-slate-500 px-1">
                   <input
                     type="datetime-local"
@@ -415,7 +461,7 @@ export default function App() {
               </form>
             </div>
           ) : (
-            /* Friends / Recent Conversations List */
+            /* Friends / Active Conversation List */
             <div className="divide-y divide-slate-100 bg-white">
               {friends.length === 0 ? (
                 <div className="text-center p-8 text-slate-400">
@@ -429,21 +475,48 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                friends.map((friend) => (
-                  <button
-                    key={friend.id}
-                    onClick={() => setActiveFriend(friend)}
-                    className="w-full flex items-center space-x-3 p-4 hover:bg-slate-50 transition text-left"
-                  >
-                    <div className="w-12 h-12 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-lg">
-                      {friend.displayName.slice(0, 1).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-slate-800 text-sm truncate">{friend.displayName}</h4>
-                      <p className="text-xs text-slate-400 truncate">Tap to start conversation</p>
-                    </div>
-                  </button>
-                ))
+                friends.map((friend) => {
+                  const hasUnread = friend.unreadCount > 0;
+                  return (
+                    <button
+                      key={friend.id}
+                      onClick={() => openChat(friend)}
+                      className="w-full flex items-center space-x-3 p-4 hover:bg-slate-50 transition text-left"
+                    >
+                      <div className="relative shrink-0">
+                        <div className="w-12 h-12 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-lg">
+                          {friend.displayName.slice(0, 1).toUpperCase()}
+                        </div>
+                        <span className="w-3 h-3 bg-green-500 border-2 border-white rounded-full absolute bottom-0 right-0"></span>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-baseline mb-1">
+                          {/* Bold display name if unread */}
+                          <h4 className={`text-sm truncate ${hasUnread ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'}`}>
+                            {friend.displayName}
+                          </h4>
+                          {friend.lastMessageTime && (
+                            <span className={`text-[10px] shrink-0 ml-2 ${hasUnread ? 'font-bold text-green-600' : 'text-slate-400'}`}>
+                              {new Date(friend.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
+                        {/* Bold message preview text if unread */}
+                        <p className={`text-xs truncate ${hasUnread ? 'font-bold text-slate-900' : 'text-slate-500'}`}>
+                          {friend.lastMessage || 'Tap to start conversation'}
+                        </p>
+                      </div>
+
+                      {/* Black number inside green unread counter badge */}
+                      {hasUnread && (
+                        <span className="ml-2 bg-green-500 text-slate-950 text-[11px] font-extrabold px-2 py-0.5 rounded-full min-w-[20px] text-center shrink-0 shadow-sm">
+                          {friend.unreadCount > 99 ? '99+' : friend.unreadCount}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })
               )}
             </div>
           )
@@ -452,13 +525,11 @@ export default function App() {
         {/* 2. FRIENDS & REQUESTS TAB */}
         {activeTab === 'friends' && (
           <div className="p-4 space-y-6">
-            {/* Add Friend Section */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Add Friend</h3>
               <FriendRequest onSubmit={handleFriendRequest} />
             </div>
 
-            {/* Pending Requests */}
             {requests.length > 0 && (
               <div className="space-y-2">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
@@ -478,7 +549,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Friends List */}
             <div className="space-y-2">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                 My Friends ({friends.length})
@@ -488,7 +558,7 @@ export default function App() {
                   <div key={friend.id} className="p-3 flex items-center justify-between">
                     <span className="font-medium text-sm text-slate-800">{friend.displayName}</span>
                     <button 
-                      onClick={() => { setActiveFriend(friend); setActiveTab('chats'); }}
+                      onClick={() => openChat(friend)}
                       className="text-xs text-indigo-600 font-semibold"
                     >
                       Chat
@@ -586,8 +656,6 @@ export default function App() {
 
       {/* WHATSAPP-STYLE BOTTOM NAVIGATION BAR */}
       <nav className="h-16 bg-white border-t border-slate-200 flex items-center justify-around shrink-0">
-        
-        {/* Chats Tab Button */}
         <button 
           onClick={() => { setActiveTab('chats'); setActiveFriend(null); }}
           className={`flex flex-col items-center justify-center w-full h-full transition ${activeTab === 'chats' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
@@ -596,7 +664,6 @@ export default function App() {
           <span className="text-[10px] font-medium mt-1">Chats</span>
         </button>
 
-        {/* Friends & Requests Tab Button */}
         <button 
           onClick={() => setActiveTab('friends')}
           className={`flex flex-col items-center justify-center w-full h-full transition relative ${activeTab === 'friends' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
@@ -608,7 +675,6 @@ export default function App() {
           )}
         </button>
 
-        {/* Notifications Tab Button */}
         <button 
           onClick={() => setActiveTab('notifications')}
           className={`flex flex-col items-center justify-center w-full h-full transition relative ${activeTab === 'notifications' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
@@ -620,7 +686,6 @@ export default function App() {
           )}
         </button>
 
-        {/* Settings Tab Button */}
         <button 
           onClick={() => setActiveTab('settings')}
           className={`flex flex-col items-center justify-center w-full h-full transition ${activeTab === 'settings' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
@@ -628,7 +693,6 @@ export default function App() {
           <Settings size={20} />
           <span className="text-[10px] font-medium mt-1">Settings</span>
         </button>
-
       </nav>
 
     </div>
