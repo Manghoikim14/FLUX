@@ -1,13 +1,12 @@
-import { useEffect, useState } from 'react';
-import { Languages } from 'lucide-react';
-import { translateText } from '../services/translation';
+import { useEffect, useState } from "react";
+import { Languages } from "lucide-react";
+import { translateText } from "../services/translation.js";
 
 export default function ChatBubble({ message, mine }) {
   const [translated, setTranslated] = useState("");
   const [showOriginal, setShowOriginal] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [remaining, setRemaining] = useState("");
-  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!message?.expiresAt) return undefined;
@@ -17,58 +16,49 @@ export default function ChatBubble({ message, mine }) {
       setRemaining(`${Math.ceil(diff / 1000 / 60)}m`);
     };
     update();
-    const interval = window.setInterval(update, 1000);
-    return () => window.clearInterval(interval);
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
   }, [message?.expiresAt]);
-
-  function detectLanguage(text) {
-    if (!text) return "en";
-    const hasHindi = /[\u0900-\u097F]/.test(text);
-    return hasHindi ? "hi" : "en";
-  }
 
   async function toggleTranslation() {
     if (!message?.content) return;
     if (translated) {
-      setShowOriginal(!showOriginal);
+      setShowOriginal(v => !v);
       return;
     }
     try {
       setIsTranslating(true);
-      setError("");
-      const sourceLang = detectLanguage(message.content);
-      const target = sourceLang === "hi" ? "en" : "hi";
+      const isHindi = /[\u0900-\u097F]/.test(message.content);
+      const target = isHindi ? "en" : "hi";
       const result = await translateText(message.content, target);
       setTranslated(result);
-      setShowOriginal(false);
-    } catch (err) {
-      setError(err.message);
     } finally {
       setIsTranslating(false);
     }
   }
 
   if (!message) return null;
-  const displayText = translated && !showOriginal ? translated : (message.content || "");
+  const displayText = translated && !showOriginal ? translated : message.content;
 
   return (
-    <div className={`message-row ${mine ? 'message-row-mine' : ''}`}>
-      <article className={`chat-bubble ${mine ? 'chat-bubble-mine' : ''}`}>
-        <p>{showOriginal || !translated ? message.content : translated}</p>
-        {translated && (
-          <div className="translated-label">
-            {showOriginal ? 'Original' : 'Translated to Hindi'}
+    <div className={`message-row ${mine ? "message-row-mine" : "message-row-theirs"}`}>
+      <div className="chat-bubble-wrapper">
+        <article className={`chat-bubble ${mine ? "chat-bubble-mine" : "chat-bubble-theirs"}`}>
+          <p>{displayText}</p>
+          {message.expiresAt && remaining && <span className="expiry">{remaining}</span>}
+          <div className="message-meta">
+            <button
+              type="button"
+              className="translate-button"
+              onClick={toggleTranslation}
+              disabled={isTranslating}
+              aria-label={isTranslating ? "Translation in progress" : translated ? (showOriginal ? "Show translation" : "Show original") : "Translate message"}
+            >
+              <Languages size={14} />
+            </button>
           </div>
-        )}
-        {remaining && <span className="expiry">{remaining}</span>}
-        <div className="bubble-actions">
-          <button type="button" onClick={toggleTranslation} disabled={isTranslating}>
-            <Languages size={14} />
-            {isTranslating ? ' Translating...' : translated ? (showOriginal ? ' Translated' : ' Original') : ' Translate'}
-          </button>
-        </div>
-        {error && <span className="form-error">{error}</span>}
-      </article>
+        </article>
+      </div>
     </div>
   );
 }
