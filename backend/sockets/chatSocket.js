@@ -22,6 +22,7 @@ function attachChatSocket(io) {
 
   io.on('connection', (socket) => {
     socket.data.peers = new Map();
+    socket.join(`user:${socket.userId}`);
 
     socket.on('chat:join', async ({ peerId } = {}, acknowledge = () => {}) => {
       try {
@@ -87,6 +88,11 @@ function attachChatSocket(io) {
         const { scheduleDeletion: enqueueDeletion } = require('../queues/deletionQueue');
         if (ttl) await enqueueDeletion(message.id, ttl);
         io.to(roomId).emit('chat:message', message);
+        io.to(`user:${peerId}`).emit('notification:new-message', {
+          messageId: message.id,
+          peerId: socket.userId,
+          preview: message.content.slice(0, 100),
+        });
         return acknowledge({ message });
       } catch (error) {
         console.error('Unable to send chat message:', error);

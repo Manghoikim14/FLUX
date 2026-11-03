@@ -37,6 +37,11 @@ function startMessageWorker(io) {
     const message = result.rows[0];
     const roomId = [senderId, recipientId].sort().join(':');
     io.to(roomId).emit('chat:message', toClientMessage(message));
+    io.to(`user:${recipientId}`).emit('notification:new-message', {
+      messageId: message.id,
+      peerId: senderId,
+      preview: message.content.slice(0, 100),
+    });
     if (ttlSeconds) {
       const { scheduleDeletion } = require('./deletionQueue');
       await scheduleDeletion(message.id, ttlSeconds);

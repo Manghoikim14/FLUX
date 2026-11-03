@@ -37,6 +37,16 @@ router.post('/request', async (req, res, next) => {
       [req.user.id, recipient.id],
     );
     if (!result.rowCount) return res.status(409).json({ error: 'A request is already pending or accepted.' });
+    const senderResult = await pool.query(
+      'SELECT display_name FROM users WHERE id = $1',
+      [req.user.id],
+    );
+    const io = req.app.get('io');
+    io.to(`user:${recipient.id}`).emit('notification:friend-request', {
+      requestId: result.rows[0].id,
+      from: { id: req.user.id, displayName: senderResult.rows[0].display_name },
+      createdAt: new Date().toISOString(),
+    });
     return res.status(201).json({
       request: result.rows[0],
       user: { id: recipient.id, displayName: recipient.display_name, language: recipient.language },
@@ -97,10 +107,20 @@ router.post('/requests/:requestId/accept', async (req, res, next) => {
     await client.query('COMMIT');
 
     const userResult = await pool.query(
-      'SELECT id, display_name, language FROM users WHERE id = $1',
-      [senderId],
+      'SELECT id, display_name, language FROM users WHERE id = ANY($1::uuid[])',
+      [[senderId, req.user.id]],
     );
-    const user = userResult.rows[0];
+    const user = userResult.rows.find((row) => row.id === senderId);
+    const acceptor = userResult.rows.find((row) => row.id === req.user.id);
+    const io = req.app.get('io');
+    io.to(`user:${req.user.id}`).emit('friends:updated');
+    io.to(`user:${senderId}`).emit('friends:updated');
+    io.to(`user:${senderId}`).emit('notification:friend-accepted', {
+      peerId: req.user.id,
+      displayName: acceptor.display_name,
+      requestId: req.params.requestId,
+      createdAt: new Date().toISOString(),
+    });
     return res.json({ user: { id: user.id, displayName: user.display_name, language: user.language } });
   } catch (error) {
     await client.query('ROLLBACK');
