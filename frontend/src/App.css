@@ -154,3 +154,185 @@ h1, h2, h3, p { margin-top: 0; }
   .notifications-list { padding: 12px; }
   .notification-card { gap: 8px; padding: 10px; }
 }
+
+/* Utility classes used by the current mobile-first App.jsx layout. */
+body { background: #f1f5f9; font-family: 'DM Sans', sans-serif; }
+button { border: 0; }
+
+.max-w-md { max-width: 28rem; }
+.mx-auto { margin-left: auto; margin-right: auto; }
+.h-screen { height: 100vh; height: 100dvh; }
+.h-full { height: 100%; }
+.h-16 { height: 4rem; }
+.h-12 { height: 3rem; }
+.h-8 { height: 2rem; }
+.h-2\.5 { height: .625rem; }
+.h-2 { height: .5rem; }
+.w-full { width: 100%; }
+.w-12 { width: 3rem; }
+.w-8 { width: 2rem; }
+.w-2\.5 { width: .625rem; }
+.w-2 { width: .5rem; }
+.min-w-0 { min-width: 0; }
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.flex-1 { flex: 1 1 0%; min-width: 0; }
+.shrink-0 { flex-shrink: 0; }
+.items-center { align-items: center; }
+.justify-center { justify-content: center; }
+.justify-between { justify-content: space-between; }
+.justify-around { justify-content: space-around; }
+.relative { position: relative; }
+.absolute { position: absolute; }
+.inset-0 { inset: 0; }
+.top-2 { top: .5rem; }
+.right-6 { right: 1.5rem; }
+.z-10 { z-index: 10; }
+.overflow-hidden { overflow: hidden; }
+.overflow-y-auto { overflow-y: auto; }
+.cursor-pointer { cursor: pointer; }
+.text-center { text-align: center; }
+.text-left { text-align: left; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uppercase { text-transform: uppercase; }
+.underline { text-decoration: underline; }
+.font-sans { font-family: 'DM Sans', sans-serif; }
+.font-mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.font-bold { font-weight: 700; }
+.font-semibold { font-weight: 600; }
+.font-medium { font-weight: 500; }
+.text-lg { font-size: 1.125rem; line-height: 1.75rem; }
+.text-sm { font-size: .875rem; line-height: 1.25rem; }
+.text-xs { font-size: .75rem; line-height: 1rem; }
+[class~="text-[10px]"] { font-size: 10px; line-height: 1rem; }
+[class~="text-[9px]"] { font-size: 9px; line-height: .8rem; }
+.text-white { color: #fff; }
+.text-slate-800 { color: #1e293b; }
+.text-slate-600 { color: #475569; }
+.text-slate-500 { color: #64748b; }
+.text-slate-400 { color: #94a3b8; }
+.text-indigo-700 { color: #4338ca; }
+.text-indigo-600 { color: #4f46e5; }
+.text-red-600 { color: #dc2626; }
+.text-red-500 { color: #ef4444; }
+.bg-white { background-color: #fff; }
+.bg-slate-100 { background-color: #f1f5f9; }
+.bg-slate-50 { background-color: #f8fafc; }
+.bg-indigo-600 { background-color: #4f46e5; }
+.bg-indigo-100 { background-color: #e0e7ff; }
+.bg-indigo-50 { background-color: #eef2ff; }
+[class~="bg-indigo-50/60"] { background-color: rgb(238 242 255 / 60%); }
+.bg-red-50 { background-color: #fef2f2; }
+.bg-red-500 { background-color: #ef4444; }
+.border { border: 1px solid #e2e8f0; }
+.border-x { border-right: 1px solid #e2e8f0; border-left: 1px solid #e2e8f0; }
+.border-b { border-bottom: 1px solid #e2e8f0; }
+.border-t { border-top: 1px solid #e2e8f0; }
+.border-none { border: 0; }
+.border-slate-200 { border-color: #e2e8f0; }
+.border-slate-100 { border-color: #f1f5f9; }
+.border-indigo-200 { border-color: #c7d2fe; }
+.divide-y > :not([hidden]) ~ :not([hidden]) { border-top: 1px solid #f1f5f9; }
+.divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #f1f5f9; }
+.rounded-full { border-radius: 9999px; }
+.rounded-xl { border-radius: .75rem; }
+.rounded-lg { border-radius: .5rem; }
+.rounded { border-radius: .25rem; }
+.shadow-2xl { box-shadow: 0 25px 50px -12px rgb(15 23 42 / 25%); }
+.shadow-sm { box-shadow: 0 1px 2px rgb(15 23 42 / 8%); }
+.shadow { box-shadow: 0 2px 6px rgb(15 23 42 / 15%); }
+.transition { transition: color .15s, background-color .15s, border-color .15s, box-shadow .15s; }
+.opacity-50 { opacity: .5; }
+.opacity-40 { opacity: .4; }
+.tracking-wider { letter-spacing: .05em; }
+.hover\:bg-slate-100:hover { background-color: #f1f5f9; }
+.hover\:bg-slate-50:hover { background-color: #f8fafc; }
+.hover\:bg-indigo-100:hover { background-color: #e0e7ff; }
+.hover\:bg-indigo-700:hover { background-color: #4338ca; }
+.hover\:bg-red-100:hover { background-color: #fee2e2; }
+.hover\:text-slate-600:hover { color: #475569; }
+.disabled\:opacity-50:disabled { opacity: .5; }
+.focus\:outline-none:focus { outline: none; }
+.focus\:ring-2:focus { box-shadow: 0 0 0 2px rgb(99 102 241 / 18%); }
+[class~="focus:ring-indigo-500/20"]:focus { box-shadow: 0 0 0 2px rgb(99 102 241 / 20%); }
+
+.flex.items-center { display: flex; align-items: center; }
+.flex.items-center.justify-center { justify-content: center; }
+.space-x-2 > :not([hidden]) ~ :not([hidden]) { margin-left: .5rem; }
+.space-x-3 > :not([hidden]) ~ :not([hidden]) { margin-left: .75rem; }
+.space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: .5rem; }
+.space-y-3 > :not([hidden]) ~ :not([hidden]) { margin-top: .75rem; }
+.space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem; }
+.space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 1.5rem; }
+.gap-2 { gap: .5rem; }
+.p-1 { padding: .25rem; }
+.p-2\.5 { padding: .625rem; }
+.p-3 { padding: .75rem; }
+.p-4 { padding: 1rem; }
+.p-8 { padding: 2rem; }
+.px-1 { padding-right: .25rem; padding-left: .25rem; }
+.px-2 { padding-right: .5rem; padding-left: .5rem; }
+.px-3 { padding-right: .75rem; padding-left: .75rem; }
+.px-4 { padding-right: 1rem; padding-left: 1rem; }
+.py-1 { padding-top: .25rem; padding-bottom: .25rem; }
+.py-1\.5 { padding-top: .375rem; padding-bottom: .375rem; }
+.py-2 { padding-top: .5rem; padding-bottom: .5rem; }
+.py-2\.5 { padding-top: .625rem; padding-bottom: .625rem; }
+.py-3 { padding-top: .75rem; padding-bottom: .75rem; }
+.py-12 { padding-top: 3rem; padding-bottom: 3rem; }
+.mt-1 { margin-top: .25rem; }
+.mt-3 { margin-top: .75rem; }
+.mt-4 { margin-top: 1rem; }
+.mb-2 { margin-bottom: .5rem; }
+.mr-1 { margin-right: .25rem; }
+.my-auto { margin-top: auto; margin-bottom: auto; }
+.mx-auto { margin-left: auto; margin-right: auto; }
+.rounded-full + button { min-width: 0; }
+
+body > #root > .max-w-md {
+  width: 100%;
+  min-height: 560px;
+  margin: 0 auto;
+  border-color: #e2e8f0;
+  background: #f1f5f9;
+}
+
+.max-w-md > header { min-height: 56px; }
+.max-w-md > main { min-height: 0; }
+.max-w-md input, .max-w-md select { font: inherit; color: inherit; }
+.max-w-md main form input {
+  border: 0;
+  border-radius: 9999px;
+  background-color: #f1f5f9;
+  padding: .5rem 1rem;
+  color: #1e293b;
+  font-size: .875rem;
+}
+.max-w-md main form input:focus { outline: none; box-shadow: 0 0 0 2px rgb(99 102 241 / 20%); }
+.max-w-md main form input[type="datetime-local"] { padding: .25rem .5rem; border-radius: .25rem; font-size: .75rem; }
+.max-w-md main form select { border: 0; background-color: #f1f5f9; padding: .25rem .5rem; border-radius: .25rem; font-size: .75rem; }
+.max-w-md > nav button { position: relative; border: 0; background: transparent; }
+.max-w-md > nav button:focus-visible { outline: 2px solid #6366f1; outline-offset: -3px; }
+.max-w-md main > .flex-col > .flex-1 { display: flex; flex-direction: column; }
+.max-w-md main .flex-1.p-4 { min-height: 0; }
+.max-w-md main form input { min-width: 0; }
+.max-w-md main form input[type="datetime-local"] { max-width: 62%; }
+.max-w-md main form select { max-width: 36%; }
+.max-w-md .absolute.inset-0 .document-panel { width: 100%; height: 100%; border: 0; background: #fff; }
+.max-w-md .friend-form { padding-top: 10px; padding-bottom: 0; border-top: 0; }
+.max-w-md .friend-form label { color: #64748b; font-size: 11px; }
+.max-w-md .friend-form .icon-button { min-width: 40px; }
+
+@media (min-width: 480px) {
+  body > #root > .max-w-md { height: min(100dvh, 900px); margin-top: max(0px, calc((100dvh - 900px) / 2)); }
+}
+
+@media (max-width: 479px) {
+  body > #root > .max-w-md { min-height: 100dvh; border: 0; box-shadow: none; }
+}
+
+@media (max-width: 360px) {
+  .max-w-md > header { padding-right: .75rem; padding-left: .75rem; }
+  .max-w-md > nav button svg { width: 18px; height: 18px; }
+  .max-w-md main form input[type="datetime-local"] { font-size: 10px; }
+}
