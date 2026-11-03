@@ -48,6 +48,8 @@ export default function App() {
   const [activeFriend, setActiveFriend] = useState(null);
   const [socket, setSocket] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatLoadError, setChatLoadError] = useState('');
   const [chatMessageResults, setChatMessageResults] = useState([]);
   const [chatSearchLoading, setChatSearchLoading] = useState(false);
   const [chatSearchError, setChatSearchError] = useState('');
@@ -228,24 +230,46 @@ export default function App() {
   useEffect(() => {
     if (!socket || !activeFriend) {
       setMessages([]);
+      setChatLoading(false);
+      setChatLoadError('');
       return;
     }
-    socket.emit('chat:join', { peerId: activeFriend.id }, (result) => {
-      if (result.error) setError(result.error);
-      else {
-        setError('');
-        const selectedMessage = selectedSearchResult?.peerId === activeFriend.id
-          ? selectedSearchResult
-          : null;
-        const history = selectedMessage && !result.messages.some((message) => message.id === selectedMessage.id)
-          ? [...result.messages, selectedMessage].sort((first, second) => (
-            new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime()
-          ))
-          : result.messages;
-        setMessages(history);
+    let active = true;
+    setMessages([]);
+    setChatLoading(true);
+    setChatLoadError('');
+
+    socket.timeout(10000).emit('chat:join', { peerId: activeFriend.id }, (timeoutError, result) => {
+      if (!active) return;
+      setChatLoading(false);
+      if (timeoutError) {
+        setChatLoadError('Could not connect to this chat. Check your connection and try again.');
+        return;
       }
+      if (result?.error) {
+        setChatLoadError(result.error);
+        return;
+      }
+      if (!Array.isArray(result?.messages)) {
+        setChatLoadError('The chat returned an invalid response. Please try again.');
+        return;
+      }
+
+      setError('');
+      const selectedMessage = selectedSearchResult?.peerId === activeFriend.id
+        ? selectedSearchResult
+        : null;
+      const history = selectedMessage && !result.messages.some((message) => message.id === selectedMessage.id)
+        ? [...result.messages, selectedMessage].sort((first, second) => (
+          new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime()
+        ))
+        : result.messages;
+      setMessages(history);
     });
     setShowDocument(false);
+    return () => {
+      active = false;
+    };
   }, [socket, activeFriend, selectedSearchResult]);
 
   useEffect(() => {
@@ -583,7 +607,13 @@ export default function App() {
                 </label>
               )}
               <div className="flex-1 p-4 overflow-y-auto space-y-3">
-                {messages.length === 0 && (
+                {chatLoading && (
+                  <p className="text-center text-slate-400 my-auto py-12">Loading conversation...</p>
+                )}
+                {chatLoadError && (
+                  <p className="text-center text-red-500 my-auto py-12" role="alert">{chatLoadError}</p>
+                )}
+                {!chatLoading && !chatLoadError && messages.length === 0 && (
                   <div className="text-center text-slate-400 my-auto py-12">
                     <MessageCircle size={36} className="mx-auto mb-2 opacity-50" />
                     <p className="text-sm">Say hello to {activeFriend.displayName}!</p>
