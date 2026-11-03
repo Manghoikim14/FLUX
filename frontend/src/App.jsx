@@ -49,6 +49,7 @@ export default function App() {
   const [socket, setSocket] = useState(null);
   const [messages, setMessages] = useState([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatJoined, setChatJoined] = useState(false);
   const [chatLoadError, setChatLoadError] = useState('');
   const [chatMessageResults, setChatMessageResults] = useState([]);
   const [chatSearchLoading, setChatSearchLoading] = useState(false);
@@ -81,6 +82,7 @@ export default function App() {
   const [error, setError] = useState('');
 
   const endOfMessages = useRef(null);
+  const joinChatRef = useRef(null);
   const activeFriendRef = useRef(activeFriend);
   const friendsRef = useRef(friends);
   const activeTabRef = useRef(activeTab);
@@ -231,44 +233,72 @@ export default function App() {
     if (!socket || !activeFriend) {
       setMessages([]);
       setChatLoading(false);
+      setChatJoined(false);
       setChatLoadError('');
       return;
     }
-    let active = true;
+    let cancelled = false;
     setMessages([]);
     setChatLoading(true);
+    setChatJoined(false);
     setChatLoadError('');
 
-    socket.timeout(10000).emit('chat:join', { peerId: activeFriend.id }, (timeoutError, result) => {
-      if (!active) return;
-      setChatLoading(false);
-      if (timeoutError) {
-        setChatLoadError('Could not connect to this chat. Check your connection and try again.');
-        return;
-      }
-      if (result?.error) {
-        setChatLoadError(result.error);
-        return;
-      }
-      if (!Array.isArray(result?.messages)) {
-        setChatLoadError('The chat returned an invalid response. Please try again.');
-        return;
-      }
+    const joinChat = () => {
+      if (cancelled) return;
+      setChatLoading(true);
+      setChatJoined(false);
+      setChatLoadError('');
+      socket.timeout(10000).emit('chat:join', { peerId: activeFriend.id }, (timeoutError, result) => {
+        if (cancelled) return;
+        if (timeoutError || !result) {
+          setChatJoined(false);
+          setChatLoading(false);
+          setChatLoadError('Could not load this conversation. Check your connection and try again.');
+          return;
+        }
+        if (result.error) {
+          setChatJoined(false);
+          setChatLoading(false);
+          setChatLoadError(result.error);
+          return;
+        }
+        if (!Array.isArray(result.messages)) {
+          setChatJoined(false);
+          setChatLoading(false);
+          setChatLoadError('The chat returned an invalid response. Please try again.');
+          return;
+        }
 
-      setError('');
-      const selectedMessage = selectedSearchResult?.peerId === activeFriend.id
-        ? selectedSearchResult
-        : null;
-      const history = selectedMessage && !result.messages.some((message) => message.id === selectedMessage.id)
-        ? [...result.messages, selectedMessage].sort((first, second) => (
-          new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime()
-        ))
-        : result.messages;
-      setMessages(history);
-    });
+        setError('');
+        const selectedMessage = selectedSearchResult?.peerId === activeFriend.id
+          ? selectedSearchResult
+          : null;
+        const history = selectedMessage && !result.messages.some((message) => message.id === selectedMessage.id)
+          ? [...result.messages, selectedMessage].sort((first, second) => (
+            new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime()
+          ))
+          : result.messages;
+        setMessages((currentMessages) => {
+          const uniqueMessages = new Map(currentMessages.map((message) => [message.id, message]));
+          history.forEach((message) => uniqueMessages.set(message.id, message));
+          return [...uniqueMessages.values()].sort((first, second) => (
+            new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime()
+          ));
+        });
+        setChatJoined(true);
+        setChatLoading(false);
+      });
+    };
+
+    joinChatRef.current = joinChat;
+    socket.on('connect', joinChat);
+    if (socket.connected) joinChat();
     setShowDocument(false);
+
     return () => {
-      active = false;
+      cancelled = true;
+      socket.off('connect', joinChat);
+      if (joinChatRef.current === joinChat) joinChatRef.current = null;
     };
   }, [socket, activeFriend, selectedSearchResult]);
 
@@ -431,6 +461,10 @@ export default function App() {
   function sendMessage(event) {
     event.preventDefault();
     if (!draft.trim() || !socket || !activeFriend) return;
+    if (!chatJoined) {
+      setChatLoadError('This conversation is still connecting. Please wait and try again.');
+      return;
+    }
     const messageTtlSeconds = ttlSeconds === 'custom'
       ? Number(customTtlAmount) * Number(customTtlUnit)
       : Number(ttlSeconds);
@@ -607,11 +641,16 @@ export default function App() {
                 </label>
               )}
               <div className="flex-1 p-4 overflow-y-auto space-y-3">
-                {chatLoading && (
-                  <p className="text-center text-slate-400 my-auto py-12">Loading conversation...</p>
+                {chatLoading && messages.length === 0 && (
+                  <p className="search-empty" role="status">Loading conversation…</p>
                 )}
                 {chatLoadError && (
-                  <p className="text-center text-red-500 my-auto py-12" role="alert">{chatLoadError}</p>
+                  <div className="chat-load-error" role="alert">
+                    <p>{chatLoadError}</p>
+                    <button type="button" onClick={() => joinChatRef.current?.()}>
+                      Try again
+                    </button>
+                  </div>
                 )}
                 {!chatLoading && !chatLoadError && messages.length === 0 && (
                   <div className="text-center text-slate-400 my-auto py-12">
@@ -663,7 +702,7 @@ export default function App() {
                     <ChevronDown size={14} />
                   </button>
                   <button 
-                    disabled={!draft.trim()} 
+                    disabled={!draft.trim() || !chatJoined}
                     className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-full transition shadow"
                   >
                     <Send size={16} />

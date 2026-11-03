@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { Languages } from "lucide-react";
-import { translateText } from "../services/translation.js";
+import { useEffect, useState } from 'react';
+import { Languages } from 'lucide-react';
+import { translateText } from '../services/translation';
 
 export default function ChatBubble({ message, mine }) {
   const [translated, setTranslated] = useState("");
@@ -52,16 +52,21 @@ export default function ChatBubble({ message, mine }) {
   const displayText = translated && !showOriginal ? translated : (message.content || "");
 
   return (
-    <div className={`message-row ${mine ? "message-row-mine" : "message-row-theirs"}`}>
-      <div className="chat-bubble-wrapper">
-        <article className={`chat-bubble ${mine ? "chat-bubble-mine" : "chat-bubble-theirs"}`}>
-          <p>{displayText}</p>
-          {message.expiresAt && remaining && <span className="expiry">{remaining}</span>}
-        </article>
-        <button type="button" onClick={toggleTranslation} disabled={isTranslating || !displayText}>
-          <Languages size={14} />
-          {isTranslating ? ' Translating...' : showOriginal ? ' Original' : translated ? ' Original' : ' Translate'}
-        </button>
+    <div className={`message-row ${mine ? 'message-row-mine' : ''}`}>
+      <article className={`chat-bubble ${mine ? 'chat-bubble-mine' : ''}`}>
+        <p>{showOriginal || !translated ? message.content : translated}</p>
+        {translated && (
+          <div className="translated-label">
+            {showOriginal ? 'Original' : 'Translated to Hindi'}
+          </div>
+        )}
+        {remaining && <span className="expiry">{remaining}</span>}
+        <div className="bubble-actions">
+          <button type="button" onClick={toggleTranslation} disabled={translating}>
+            <Languages size={14} />
+            {translating ? ' Translating...' : translated ? (showOriginal ? ' Translated' : ' Original') : ' Translate'}
+          </button>
+        </div>
         {error && <span className="form-error">{error}</span>}
       </div>
     </div>
