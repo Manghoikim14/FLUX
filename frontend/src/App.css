@@ -322,6 +322,149 @@ body > #root > .max-w-md {
 .max-w-md .friend-form { padding-top: 10px; padding-bottom: 0; border-top: 0; }
 .max-w-md .friend-form label { color: #64748b; font-size: 11px; }
 .max-w-md .friend-form .icon-button { min-width: 40px; }
+.message-options-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 40px;
+  padding: 0 9px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9999px;
+  color: #64748b;
+  background: #fff;
+}
+.message-options-toggle:hover,
+.message-options-toggle.is-open {
+  border-color: #c7d2fe;
+  color: #4f46e5;
+  background: #eef2ff;
+}
+.message-options-toggle svg:last-child { transition: transform .18s ease; }
+.message-options-toggle.is-open svg:last-child { transform: rotate(180deg); }
+.message-options-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+.message-options-panel label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+}
+.custom-expiry-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.custom-expiry-control label { align-content: start; }
+.schedule-picker-field { display: grid; min-width: 0; gap: 6px; }
+.schedule-picker-trigger {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #334155;
+  background: #fff;
+  font-size: 11px;
+  text-align: left;
+}
+.schedule-calendar {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgb(15 23 42 / 8%);
+}
+.schedule-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #334155;
+  font-size: 12px;
+}
+.schedule-calendar-header button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: #64748b;
+  background: #f1f5f9;
+}
+.schedule-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+  text-align: center;
+}
+.schedule-calendar-grid > span {
+  display: grid;
+  min-height: 28px;
+  place-items: center;
+  color: #94a3b8;
+  font-size: 10px;
+}
+.schedule-calendar-grid > button {
+  display: grid;
+  min-height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: #334155;
+  background: transparent;
+  font-size: 11px;
+}
+.schedule-calendar-grid > button:hover:not(:disabled) { background: #eef2ff; }
+.schedule-calendar-grid > button.is-selected { color: #fff; background: #4f46e5; }
+.schedule-calendar-grid > button:disabled { color: #cbd5e1; }
+.message-options-panel .schedule-calendar-time {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  color: #64748b;
+  font-size: 11px;
+}
+.max-w-md .message-options-panel input,
+.max-w-md .message-options-panel select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #334155;
+  background: #fff;
+  font-size: 11px;
+}
+.schedule-calendar .schedule-set-button {
+  width: auto;
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: #4f46e5;
+  font-size: 11px;
+  font-weight: 700;
+}
+.schedule-calendar .schedule-set-button:hover { background: #4338ca; }
+.schedule-error { margin: 0; color: #dc2626; font-size: 10px; }
+.schedule-status { color: #94a3b8; font-size: 10px; font-weight: 500; }
+.schedule-status.is-set { color: #4f46e5; }
 
 @media (min-width: 480px) {
   body > #root > .max-w-md { height: min(100dvh, 900px); margin-top: max(0px, calc((100dvh - 900px) / 2)); }

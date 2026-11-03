@@ -3,6 +3,10 @@ import {
   ArrowLeft, 
   Bell, 
   Check, 
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  Clock3,
   LogOut, 
   MessageCircle, 
   Search,
@@ -54,7 +58,19 @@ export default function App() {
   const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [draft, setDraft] = useState('');
   const [scheduledFor, setScheduledFor] = useState('');
+  const [scheduleIsSet, setScheduleIsSet] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState(() => {
+    const soon = new Date(Date.now() + 60000);
+    return `${soon.getFullYear()}-${String(soon.getMonth() + 1).padStart(2, '0')}-${String(soon.getDate()).padStart(2, '0')}`;
+  });
+  const [scheduleTime, setScheduleTime] = useState('12:00');
+  const [scheduleMonth, setScheduleMonth] = useState(() => new Date());
+  const [showSchedulePicker, setShowSchedulePicker] = useState(false);
+  const [scheduleError, setScheduleError] = useState('');
   const [ttlSeconds, setTtlSeconds] = useState(0);
+  const [customTtlAmount, setCustomTtlAmount] = useState('10');
+  const [customTtlUnit, setCustomTtlUnit] = useState(60);
+  const [showMessageOptions, setShowMessageOptions] = useState(false);
   const [showDocument, setShowDocument] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [authLanguage, setAuthLanguage] = useState('en');
@@ -355,9 +371,6 @@ export default function App() {
     (friend.lastMessage || '').toLocaleLowerCase().includes(normalizedChatSearch)
   ));
   const normalizedFriendsSearch = friendsSearch.trim().toLocaleLowerCase();
-  const filteredFriends = friends.filter((friend) => (
-    friend.displayName.toLocaleLowerCase().includes(normalizedFriendsSearch)
-  ));
   const filteredRequests = requests.filter((request) => (
     request.user.displayName.toLocaleLowerCase().includes(normalizedFriendsSearch)
   ));
@@ -365,18 +378,49 @@ export default function App() {
   const filteredMessages = messages.filter((message) => (
     message.content.toLocaleLowerCase().includes(normalizedMessageSearch)
   ));
+  const firstScheduleWeekday = new Date(
+    scheduleMonth.getFullYear(),
+    scheduleMonth.getMonth(),
+    1,
+  ).getDay();
+  const scheduleDaysInMonth = new Date(
+    scheduleMonth.getFullYear(),
+    scheduleMonth.getMonth() + 1,
+    0,
+  ).getDate();
+  const scheduleToday = new Date();
+  const scheduleTodayKey = `${scheduleToday.getFullYear()}-${String(scheduleToday.getMonth() + 1).padStart(2, '0')}-${String(scheduleToday.getDate()).padStart(2, '0')}`;
+
+  function setScheduledMessageTime() {
+    const dateTime = `${scheduleDate}T${scheduleTime}`;
+    if (new Date(dateTime).getTime() < Date.now() + 60000) {
+      setScheduleError('Choose a time at least one minute from now.');
+      return;
+    }
+    setScheduleError('');
+    setScheduledFor(dateTime);
+    setScheduleIsSet(true);
+    setShowSchedulePicker(false);
+  }
 
   function sendMessage(event) {
     event.preventDefault();
     if (!draft.trim() || !socket || !activeFriend) return;
+    const messageTtlSeconds = ttlSeconds === 'custom'
+      ? Number(customTtlAmount) * Number(customTtlUnit)
+      : Number(ttlSeconds);
+    if (!Number.isInteger(messageTtlSeconds) || messageTtlSeconds < 0 || (messageTtlSeconds > 0 && messageTtlSeconds < 10)) {
+      setError('Choose a deletion time of at least 10 seconds.');
+      return;
+    }
     const content = draft.trim();
     setError('');
-    const eventName = scheduledFor ? 'chat:schedule' : 'chat:send';
+    const eventName = scheduleIsSet ? 'chat:schedule' : 'chat:send';
     const payload = {
       peerId: activeFriend.id,
       content,
-      ttlSeconds: Number(ttlSeconds),
-      ...(scheduledFor ? { scheduledFor: new Date(scheduledFor).toISOString() } : {}),
+      ttlSeconds: messageTtlSeconds,
+      ...(scheduleIsSet ? { scheduledFor: new Date(scheduledFor).toISOString() } : {}),
     };
     socket.emit(eventName, payload, (result) => {
       if (result.error) setError(result.error);
@@ -390,6 +434,8 @@ export default function App() {
         );
         setDraft('');
         setScheduledFor('');
+        setScheduleIsSet(false);
+        setShowMessageOptions(false);
       }
     });
   }
@@ -532,6 +578,18 @@ export default function App() {
                     maxLength={4000}
                     className="flex-1 px-4 py-2 bg-slate-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                   />
+                  <button
+                    type="button"
+                    className={`message-options-toggle ${showMessageOptions ? 'is-open' : ''}`}
+                    onClick={() => setShowMessageOptions((isOpen) => !isOpen)}
+                    aria-expanded={showMessageOptions}
+                    aria-label="Message timing and deletion settings"
+                    title="Message timing and deletion settings"
+                  >
+                    <Clock3 size={16} />
+                    <span>Options</span>
+                    <ChevronDown size={14} />
+                  </button>
                   <button 
                     disabled={!draft.trim()} 
                     className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-full transition shadow"
@@ -540,26 +598,141 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="flex items-center justify-between text-xs text-slate-500 px-1">
-                  <input
-                    type="datetime-local"
-                    min={new Date(Date.now() + 60000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
-                    value={scheduledFor}
-                    onChange={(event) => setScheduledFor(event.target.value)}
-                    className="bg-slate-100 border-none rounded px-2 py-1 text-xs"
-                    title="Schedule send time"
-                  />
-                  <select 
-                    value={ttlSeconds} 
-                    onChange={(event) => setTtlSeconds(event.target.value)}
-                    className="bg-slate-100 border-none rounded px-2 py-1 text-xs"
-                  >
-                    <option value={0}>Keep message</option>
-                    <option value={60}>1 min</option>
-                    <option value={3600}>1 hour</option>
-                    <option value={86400}>1 day</option>
-                  </select>
-                </div>
+                {showMessageOptions && (
+                  <div className="message-options-panel">
+                    <div className="schedule-picker-field">
+                      <span>Send at</span>
+                      <button
+                        type="button"
+                        className="schedule-picker-trigger"
+                        onClick={() => setShowSchedulePicker((isOpen) => !isOpen)}
+                        aria-expanded={showSchedulePicker}
+                      >
+                        {scheduleIsSet
+                          ? new Date(scheduledFor).toLocaleString()
+                          : 'Choose date and time'}
+                        <ChevronDown size={14} />
+                      </button>
+                      {showSchedulePicker && (
+                        <div className="schedule-calendar" role="dialog" aria-label="Choose scheduled send date and time">
+                          <div className="schedule-calendar-header">
+                            <button
+                              type="button"
+                              aria-label="Previous month"
+                              onClick={() => setScheduleMonth((month) => new Date(month.getFullYear(), month.getMonth() - 1, 1))}
+                            >
+                              <ChevronLeft size={16} />
+                            </button>
+                            <strong>{scheduleMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</strong>
+                            <button
+                              type="button"
+                              aria-label="Next month"
+                              onClick={() => setScheduleMonth((month) => new Date(month.getFullYear(), month.getMonth() + 1, 1))}
+                            >
+                              <ChevronRight size={16} />
+                            </button>
+                          </div>
+                          <div className="schedule-calendar-grid" aria-hidden="true">
+                            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) => (
+                              <span key={day}>{day}</span>
+                            ))}
+                          </div>
+                          <div className="schedule-calendar-grid">
+                            {Array.from({ length: firstScheduleWeekday }, (_, index) => (
+                              <span key={`empty-${index}`} />
+                            ))}
+                            {Array.from({ length: scheduleDaysInMonth }, (_, index) => {
+                              const day = index + 1;
+                              const dateKey = `${scheduleMonth.getFullYear()}-${String(scheduleMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                              const isPast = dateKey < scheduleTodayKey;
+                              return (
+                                <button
+                                  type="button"
+                                  key={dateKey}
+                                  disabled={isPast}
+                                  className={scheduleDate === dateKey ? 'is-selected' : ''}
+                                  onClick={() => {
+                                    setScheduleDate(dateKey);
+                                    setScheduleIsSet(false);
+                                    setScheduleError('');
+                                  }}
+                                >
+                                  {day}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <label className="schedule-calendar-time">
+                            <span>Time</span>
+                            <input
+                              type="time"
+                              value={scheduleTime}
+                              onChange={(event) => {
+                                setScheduleTime(event.target.value);
+                                setScheduleIsSet(false);
+                                setScheduleError('');
+                              }}
+                            />
+                          </label>
+                          {scheduleError && <p className="schedule-error">{scheduleError}</p>}
+                          <button
+                            type="button"
+                            className="schedule-set-button"
+                            onClick={setScheduledMessageTime}
+                          >
+                            Set
+                          </button>
+                        </div>
+                      )}
+                      <span className={`schedule-status ${scheduleIsSet ? 'is-set' : ''}`} role="status">
+                        {scheduleIsSet
+                          ? `Scheduled for ${new Date(scheduledFor).toLocaleString()}`
+                          : 'Not set — sends now'}
+                      </span>
+                    </div>
+                    <label>
+                      <span>Delete after</span>
+                      <select
+                        value={ttlSeconds}
+                        onChange={(event) => setTtlSeconds(event.target.value)}
+                      >
+                        <option value={0}>Never</option>
+                        <option value={60}>1 minute</option>
+                        <option value={3600}>1 hour</option>
+                        <option value={86400}>1 day</option>
+                        <option value="custom">Custom time…</option>
+                      </select>
+                    </label>
+                    {ttlSeconds === 'custom' && (
+                      <div className="custom-expiry-control">
+                        <label>
+                          <span>Delete after</span>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={customTtlAmount}
+                            onChange={(event) => setCustomTtlAmount(event.target.value)}
+                            aria-label="Custom deletion time amount"
+                          />
+                        </label>
+                        <label>
+                          <span>Unit</span>
+                          <select
+                            value={customTtlUnit}
+                            onChange={(event) => setCustomTtlUnit(Number(event.target.value))}
+                            aria-label="Custom deletion time unit"
+                          >
+                            <option value={1}>Seconds</option>
+                            <option value={60}>Minutes</option>
+                            <option value={3600}>Hours</option>
+                            <option value={86400}>Days</option>
+                          </select>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {error && <p className="text-xs text-red-500 px-1">{error}</p>}
               </form>
             </div>
@@ -675,8 +848,8 @@ export default function App() {
                 type="search"
                 value={friendsSearch}
                 onChange={(event) => setFriendsSearch(event.target.value)}
-                placeholder="Search friends and requests"
-                aria-label="Search friends and friend requests"
+                placeholder="Search requests"
+                aria-label="Search friend requests"
               />
             </label>
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -703,27 +876,6 @@ export default function App() {
               </div>
             )}
 
-            <div className="space-y-2">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                My Friends ({filteredFriends.length})
-              </h3>
-              <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-                {filteredFriends.map((friend) => (
-                  <div key={friend.id} className="p-3 flex items-center justify-between">
-                    <span className="font-medium text-sm text-slate-800">{friend.displayName}</span>
-                    <button 
-                      onClick={() => openChat(friend)}
-                      className="text-xs text-indigo-600 font-semibold"
-                    >
-                      Chat
-                    </button>
-                  </div>
-                ))}
-                {filteredFriends.length === 0 && (
-                  <p className="search-empty">No friends match “{friendsSearch}”.</p>
-                )}
-              </div>
-            </div>
           </div>
         )}
 
