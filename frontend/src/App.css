@@ -112,7 +112,8 @@ h1, h2, h3, p { margin-top: 0; }
 .conversation-empty p { color: var(--muted); font-size: 12px; }
 .message-row { display: flex; justify-content: flex-start; }
 .message-row-mine { justify-content: flex-end; }
-.chat-bubble { max-width: min(72%, 440px); padding: 12px 14px 9px; border-radius: 4px 14px 14px 14px; color: #45495e; background: #f3f4f8; }
+.chat-bubble-wrapper { width: fit-content; max-width: min(72%, 440px); }
+.chat-bubble { max-width: 100%; padding: 12px 14px 9px; border-radius: 4px 14px 14px 14px; color: #45495e; background: #f3f4f8; }
 .chat-bubble-mine { border-radius: 14px 4px 14px 14px; color: white; background: linear-gradient(135deg, #7870ef, #655cdf); }
 .chat-bubble p { margin: 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
 .chat-bubble .translation { margin-top: 7px; padding-top: 7px; border-top: 1px solid #ffffff50; font-style: italic; opacity: .9; }
@@ -121,6 +122,9 @@ h1, h2, h3, p { margin-top: 0; }
 .translate-button { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; color: inherit; background: transparent; font-size: 9px; }
 .composer { display: flex; align-items: center; gap: 10px; padding: 14px 22px 18px; border-top: 1px solid var(--line); }
 .composer input { flex: 1; min-width: 0; }
+.message-composer-input { flex: 1; min-width: 0; max-height: 120px; resize: none; overflow-y: auto; scrollbar-width: none; overflow-wrap: anywhere; padding: 10px 16px; border: 0; border-radius: 20px; outline: none; background: #f1f5f9; font-size: 14px; line-height: 1.45; }
+.message-composer-input::-webkit-scrollbar { display: none; }
+.message-composer-input:focus { box-shadow: 0 0 0 2px #6b63e833; }
 .composer select { width: auto; padding: 11px 8px; color: #686c80; font-size: 11px; }
 .composer .schedule-input { width: 138px; padding: 10px 7px; color: #686c80; font-size: 10px; }
 .send-button { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 11px; color: white; background: var(--accent); }
@@ -154,7 +158,7 @@ h1, h2, h3, p { margin-top: 0; }
   .sidebar { flex: 0 0 auto; max-height: 42vh; }
   .friends-section { margin-top: 10px; }
   .chat-panel { flex: 1; min-height: 0; }
-  .chat-bubble { max-width: 88%; }
+  .chat-bubble-wrapper { max-width: 88%; }
   .auth-card { padding: 28px 22px; }
   .notifications-page-header { flex-wrap: wrap; gap: 7px 12px; padding: 17px; }
   .notifications-page-header > div { order: 1; flex-basis: 100%; }
