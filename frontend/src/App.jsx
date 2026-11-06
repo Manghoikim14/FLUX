@@ -65,6 +65,7 @@ export default function App() {
   const [messageSearch, setMessageSearch] = useState('');
   const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [draft, setDraft] = useState('');
+  const draftInput = useRef(null);
   const [scheduledFor, setScheduledFor] = useState('');
   const [scheduleIsSet, setScheduleIsSet] = useState(false);
   const [scheduleDate, setScheduleDate] = useState(() => {
@@ -94,6 +95,15 @@ export default function App() {
   activeFriendRef.current = activeFriend;
   friendsRef.current = friends;
   activeTabRef.current = activeTab;
+
+  useEffect(() => {
+    const input = draftInput.current;
+    if (!input) return;
+
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
+    input.scrollTop = input.scrollHeight;
+  }, [draft]);
 
   function addNotification(notification) {
     setNotifications((current) => [
@@ -740,12 +750,20 @@ export default function App() {
               {/* Message Composer */}
               <form className="p-3 bg-white border-t border-slate-200 flex flex-col gap-2 shrink-0" onSubmit={sendMessage}>
                 <div className="flex items-center gap-2">
-                  <input
+                  <textarea
+                    ref={draftInput}
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        event.currentTarget.form.requestSubmit();
+                      }
+                    }}
                     placeholder="Write a message..."
                     maxLength={4000}
-                    className="flex-1 px-4 py-2 bg-slate-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    rows={1}
+                    className="message-composer-input"
                   />
                   <button
                     type="button"
