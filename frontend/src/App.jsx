@@ -9,10 +9,12 @@ import {
   Clock3,
   LogOut, 
   MessageCircle, 
+  MoreVertical,
   Search,
   Send, 
   Settings, 
   UserPlus, 
+  UserMinus,
   Users,
   X,
 } from 'lucide-react';
@@ -26,6 +28,7 @@ import {
   register,
   requestFriend,
   searchMessages,
+  unfriend,
 } from './services/api';
 import { connectSocket } from './services/socket';
 import ChatBubble from './components/ChatBubble';
@@ -61,6 +64,7 @@ export default function App() {
   const [selectedSearchResult, setSelectedSearchResult] = useState(null);
   const [chatListSearch, setChatListSearch] = useState('');
   const [showChatListSearch, setShowChatListSearch] = useState(false);
+  const [showChatMenu, setShowChatMenu] = useState(false);
   const [friendsSearch, setFriendsSearch] = useState('');
   const [messageSearch, setMessageSearch] = useState('');
   const [showMessageSearch, setShowMessageSearch] = useState(false);
@@ -83,6 +87,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login');
   const [authLanguage, setAuthLanguage] = useState('en');
   const [busy, setBusy] = useState(false);
+  const [unfriendingId, setUnfriendingId] = useState(null);
   const [error, setError] = useState('');
 
   const endOfMessages = useRef(null);
@@ -111,15 +116,18 @@ export default function App() {
     
     setFriends((currentFriends) => {
       const existingUnreadMap = new Map(currentFriends.map((f) => [f.id, f.unreadCount || 0]));
-      const existingLastMsgMap = new Map(currentFriends.map((f) => [f.id, f.lastMessage]));
-      const existingLastTimeMap = new Map(currentFriends.map((f) => [f.id, f.lastMessageTime]));
-
-      return friendResult.friends.map((friend) => ({
-        ...friend,
-        unreadCount: existingUnreadMap.get(friend.id) || 0,
-        lastMessage: existingLastMsgMap.get(friend.id) || '',
-        lastMessageTime: existingLastTimeMap.get(friend.id) || null,
-      }));
+      return friendResult.friends
+        .map((friend) => ({
+          ...friend,
+          unreadCount: existingUnreadMap.get(friend.id) || 0,
+          lastMessage: friend.lastMessage || '',
+          lastMessageTime: friend.lastMessageTime || null,
+        }))
+        .sort((first, second) => {
+          const firstTime = first.lastMessageTime ? new Date(first.lastMessageTime).getTime() : 0;
+          const secondTime = second.lastMessageTime ? new Date(second.lastMessageTime).getTime() : 0;
+          return secondTime - firstTime || first.displayName.localeCompare(second.displayName);
+        });
     });
 
     setRequests(requestResult.requests);
@@ -177,33 +185,53 @@ export default function App() {
     });
 
     client.on('chat:message', (message) => {
-      const isCurrentActiveChat = 
-        activeFriendRef.current?.id === message.senderId && 
-        activeTabRef.current === 'chats' && 
+      const peerId = message.senderId === session.user.id ? message.recipientId : message.senderId;
+      const isCurrentActiveChat =
+        activeFriendRef.current?.id === peerId &&
+        activeTabRef.current === 'chats' &&
         document.visibilityState === 'visible';
 
-      if (activeFriendRef.current?.id === message.senderId || message.senderId === session.user.id) {
+      if (activeFriendRef.current?.id === peerId) {
         setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+      }
+      if (isCurrentActiveChat && message.senderId !== session.user.id) {
+        client.emit('chat:read', { peerId: message.senderId });
       }
 
       setFriends((currentFriends) =>
-        currentFriends.map((friend) => {
-          const isSender = friend.id === message.senderId;
-          if (isSender) {
-            return {
-              ...friend,
-              lastMessage: message.content,
-              lastMessageTime: message.createdAt || new Date().toISOString(),
-              unreadCount: isCurrentActiveChat ? 0 : (friend.unreadCount || 0) + 1,
-            };
-          }
-          return friend;
-        })
+        currentFriends
+          .map((friend) => {
+            if (friend.id === peerId) {
+              const isIncoming = message.senderId !== session.user.id;
+              return {
+                ...friend,
+                lastMessage: message.content,
+                lastMessageTime: message.createdAt || new Date().toISOString(),
+                unreadCount: isIncoming
+                  ? isCurrentActiveChat ? 0 : (friend.unreadCount || 0) + 1
+                  : friend.unreadCount || 0,
+              };
+            }
+            return friend;
+          })
+          .sort((first, second) => {
+            const firstTime = first.lastMessageTime ? new Date(first.lastMessageTime).getTime() : 0;
+            const secondTime = second.lastMessageTime ? new Date(second.lastMessageTime).getTime() : 0;
+            return secondTime - firstTime || first.displayName.localeCompare(second.displayName);
+          })
       );
     });
 
     client.on('chat:message-deleted', ({ id }) => {
       setMessages((current) => current.filter((message) => message.id !== id));
+    });
+
+    client.on('chat:read', ({ messageIds, readAt }) => {
+      if (!Array.isArray(messageIds)) return;
+      const readIds = new Set(messageIds);
+      setMessages((current) => current.map((message) => (
+        readIds.has(message.id) ? { ...message, readAt } : message
+      )));
     });
 
     client.on('notification:friend-request', (request) => {
@@ -324,6 +352,9 @@ export default function App() {
             new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime()
           ));
         });
+        if (document.visibilityState === 'visible' && activeTabRef.current === 'chats') {
+          socket.emit('chat:read', { peerId: activeFriend.id });
+        }
         setChatJoined(true);
         setChatLoading(false);
       });
@@ -340,6 +371,17 @@ export default function App() {
       if (joinChatRef.current === joinChat) joinChatRef.current = null;
     };
   }, [socket, activeFriend, selectedSearchResult]);
+
+  useEffect(() => {
+    if (!socket || !activeFriend) return undefined;
+    const markConversationRead = () => {
+      if (document.visibilityState === 'visible' && activeTabRef.current === 'chats') {
+        socket.emit('chat:read', { peerId: activeFriend.id });
+      }
+    };
+    document.addEventListener('visibilitychange', markConversationRead);
+    return () => document.removeEventListener('visibilitychange', markConversationRead);
+  }, [socket, activeFriend]);
 
   useEffect(() => {
     const query = chatListSearch.trim();
@@ -445,6 +487,24 @@ export default function App() {
     }
   }
 
+  async function handleUnfriend(friend) {
+    if (!window.confirm(`Unfriend ${friend.displayName}?`)) return;
+    setError('');
+    setUnfriendingId(friend.id);
+    try {
+      await unfriend(session.token, friend.id);
+      setFriends((current) => current.filter((item) => item.id !== friend.id));
+      if (activeFriendRef.current?.id === friend.id) {
+        setActiveFriend(null);
+        setMessages([]);
+      }
+    } catch (unfriendError) {
+      setError(unfriendError.message);
+    } finally {
+      setUnfriendingId(null);
+    }
+  }
+
   async function openNotification(notification) {
     setNotifications((current) => current.map((item) => (
       item.id === notification.id ? { ...item, read: true } : item
@@ -477,6 +537,9 @@ export default function App() {
     (friend.lastMessage || '').toLocaleLowerCase().includes(normalizedChatSearch)
   ));
   const normalizedFriendsSearch = friendsSearch.trim().toLocaleLowerCase();
+  const filteredFriends = friends.filter((friend) => (
+    friend.displayName.toLocaleLowerCase().includes(normalizedFriendsSearch)
+  ));
   const filteredRequests = requests.filter((request) => (
     request.user.displayName.toLocaleLowerCase().includes(normalizedFriendsSearch)
   ));
@@ -631,29 +694,61 @@ export default function App() {
                 <Search size={18} />
               </button>
             ) : (
-              <button
-                type="button"
-                className={`p-2 rounded-full transition ${showMessageSearch ? 'bg-indigo-100 text-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
-                onClick={() => {
-                  setShowMessageSearch((isVisible) => {
-                    if (isVisible) setMessageSearch('');
-                    return !isVisible;
-                  });
-                }}
-                aria-label={showMessageSearch ? 'Close message search' : 'Search messages'}
-                aria-pressed={showMessageSearch}
-                title={showMessageSearch ? 'Close message search' : 'Search messages'}
-              >
-                <Search size={18} />
-              </button>
-            )}
-            {activeFriend && (
-              <button
-                className={`text-xs px-3 py-1.5 rounded-full font-medium transition ${showDocument ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
-                onClick={() => setShowDocument(!showDocument)}
-              >
-                Shared notes
-              </button>
+              <div className="chat-menu-wrap">
+                <button
+                  type="button"
+                  className="chat-menu-button"
+                  onClick={() => setShowChatMenu((isOpen) => !isOpen)}
+                  aria-label="Conversation options"
+                  aria-haspopup="menu"
+                  aria-expanded={showChatMenu}
+                  title="Conversation options"
+                >
+                  <MoreVertical size={20} />
+                </button>
+                {showChatMenu && (
+                  <div className="chat-menu" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowMessageSearch((isVisible) => {
+                          if (isVisible) setMessageSearch('');
+                          return !isVisible;
+                        });
+                        setShowChatMenu(false);
+                      }}
+                    >
+                      <Search size={16} />
+                      <span>{showMessageSearch ? 'Close message search' : 'Search messages'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowDocument((isVisible) => !isVisible);
+                        setShowChatMenu(false);
+                      }}
+                    >
+                      <MessageCircle size={16} />
+                      <span>{showDocument ? 'Close shared notes' : 'Shared notes'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="chat-menu-unfriend"
+                      disabled={unfriendingId === activeFriend.id}
+                      onClick={() => {
+                        setShowChatMenu(false);
+                        handleUnfriend(activeFriend);
+                      }}
+                    >
+                      <UserMinus size={16} />
+                      <span>{unfriendingId === activeFriend.id ? 'Removing…' : 'Unfriend'}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -1020,13 +1115,36 @@ export default function App() {
                 type="search"
                 value={friendsSearch}
                 onChange={(event) => setFriendsSearch(event.target.value)}
-                placeholder="Search requests"
-                aria-label="Search friend requests"
+                placeholder="Search friends and requests"
+                aria-label="Search friends and requests"
               />
             </label>
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Add Friend</h3>
               <FriendRequest onSubmit={handleFriendRequest} />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Friends ({filteredFriends.length})
+              </h3>
+              {filteredFriends.map((friend) => (
+                  <div key={friend.id} className="bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between shadow-sm">
+                    <span className="font-medium text-sm text-slate-800">{friend.displayName}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleUnfriend(friend)}
+                      disabled={unfriendingId === friend.id}
+                      className="request-reject-button"
+                    >
+                      {unfriendingId === friend.id ? 'Removing…' : 'Unfriend'}
+                    </button>
+                  </div>
+                ))}
+              {friends.length === 0 && <p className="search-empty">You have no friends yet.</p>}
+              {friends.length > 0 && filteredFriends.length === 0 && (
+                <p className="search-empty">No friends match your search.</p>
+              )}
             </div>
 
             {filteredRequests.length > 0 && (

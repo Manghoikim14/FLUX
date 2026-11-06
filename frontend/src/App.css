@@ -117,6 +117,7 @@ h1, h2, h3, p { margin-top: 0; }
 .chat-bubble p { margin: 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
 .chat-bubble .translation { margin-top: 7px; padding-top: 7px; border-top: 1px solid #ffffff50; font-style: italic; opacity: .9; }
 .message-meta { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 7px; font-size: 9px; opacity: .76; }
+.message-read-receipt { display: inline-flex; align-items: center; color: currentColor; }
 .translate-button { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; color: inherit; background: transparent; font-size: 9px; }
 .composer { display: flex; align-items: center; gap: 10px; padding: 14px 22px 18px; border-top: 1px solid var(--line); }
 .composer input { flex: 1; min-width: 0; }
@@ -308,6 +309,14 @@ body > #root > .max-w-md {
 .app-header-title { flex: 1; min-width: 0; }
 .app-header-title h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .header-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; margin-left: 8px; }
+.chat-menu-wrap { position: relative; flex: 0 0 auto; }
+.chat-menu-button { display: grid; width: 36px; height: 36px; place-items: center; border: 0; border-radius: 50%; color: #64748b; background: transparent; }
+.chat-menu-button:hover, .chat-menu-button[aria-expanded="true"] { color: #4f46e5; background: #eef2ff; }
+.chat-menu { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: grid; width: 190px; padding: 5px; border: 1px solid #e2e8f0; border-radius: 12px; background: white; box-shadow: 0 10px 28px #0f172a20; }
+.chat-menu button { display: flex; align-items: center; gap: 10px; padding: 10px; border: 0; border-radius: 8px; color: #334155; background: transparent; text-align: left; font-size: 12px; }
+.chat-menu button:hover:not(:disabled) { background: #f1f5f9; }
+.chat-menu button:disabled { opacity: .6; }
+.chat-menu .chat-menu-unfriend { color: #c3425a; }
 .header-profile { display: flex; min-width: 0; max-width: 126px; align-items: center; gap: 7px; padding: 3px 8px 3px 3px; border: 0; border-radius: 9999px; color: #334155; background: #f1f5f9; }
 .header-profile:hover { background: #e8eafc; }
 .header-profile:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }

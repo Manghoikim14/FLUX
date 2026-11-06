@@ -20,6 +20,8 @@ A starter direct-messaging app with PostgreSQL persistence, Socket.IO chat and i
    npm run dev
    ```
 
+The backend adds the message read-receipt column to existing databases at startup. Sent messages show an eye to the sender after the recipient opens that conversation.
+
 4. In another terminal, install and start the frontend:
 
    ```powershell

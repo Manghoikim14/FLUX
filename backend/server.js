@@ -47,11 +47,20 @@ app.use((error, req, res, next) => {
 });
 
 attachChatSocket(io);
-const workers = [startDeletionWorker(io), startMessageWorker(io)];
+let workers = [];
 const port = Number(process.env.PORT || 4000);
 
-server.listen(port, () => {
-  console.log(`Chat API listening on port ${port}`);
+async function startServer() {
+  await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ');
+  workers = [startDeletionWorker(io), startMessageWorker(io)];
+  server.listen(port, () => {
+    console.log(`Chat API listening on port ${port}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error('Unable to start the chat API:', error);
+  process.exitCode = 1;
 });
 
 async function shutdown() {

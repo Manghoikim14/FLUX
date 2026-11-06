@@ -25,6 +25,10 @@ export const login = (data) => request('/auth/login', {
 });
 
 export const getFriends = (token) => request('/friends', { token });
+export const unfriend = (token, friendId) => request(`/friends/${friendId}`, {
+  method: 'DELETE',
+  token,
+});
 export const getFriendRequests = (token) => request('/friends/requests', { token });
 export const getSentFriendRequests = (token) => request('/friends/requests/sent', { token });
 export const searchMessages = (token, query) => request(`/friends/search/messages?q=${encodeURIComponent(query)}`, { token });

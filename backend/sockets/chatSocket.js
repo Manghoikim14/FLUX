@@ -40,7 +40,7 @@ function attachChatSocket(io) {
         socket.join(roomId);
         socket.data.peers.set(roomId, peerId);
         const history = await pool.query(
-          `SELECT id, sender_id, recipient_id, content, created_at, expires_at
+          `SELECT id, sender_id, recipient_id, content, created_at, read_at, expires_at
            FROM messages
            WHERE ((sender_id = $1 AND recipient_id = $2) OR (sender_id = $2 AND recipient_id = $1))
              AND (expires_at IS NULL OR expires_at > NOW())
@@ -52,6 +52,37 @@ function attachChatSocket(io) {
       } catch (error) {
         console.error('Unable to join chat:', error);
         return acknowledge({ error: 'Unable to load this conversation.' });
+      }
+    });
+
+    socket.on('chat:read', async ({ peerId } = {}) => {
+      try {
+        const roomId = roomIdFor(socket.userId, peerId || '');
+        if (typeof peerId !== 'string' || socket.data.peers.get(roomId) !== peerId) return;
+
+        const [low, high] = [socket.userId, peerId].sort();
+        const friendship = await pool.query(
+          'SELECT 1 FROM friendships WHERE user_low = $1 AND user_high = $2',
+          [low, high],
+        );
+        if (!friendship.rowCount) return;
+
+        const result = await pool.query(
+          `UPDATE messages SET read_at = NOW()
+           WHERE sender_id = $1 AND recipient_id = $2 AND read_at IS NULL
+             AND (scheduled_for IS NULL OR scheduled_for <= NOW())
+             AND (expires_at IS NULL OR expires_at > NOW())
+           RETURNING id, read_at`,
+          [peerId, socket.userId],
+        );
+        if (result.rowCount) {
+          io.to(`user:${peerId}`).emit('chat:read', {
+            messageIds: result.rows.map((row) => row.id),
+            readAt: result.rows[0].read_at,
+          });
+        }
+      } catch (error) {
+        console.error('Unable to mark chat messages as read:', error);
       }
     });
 

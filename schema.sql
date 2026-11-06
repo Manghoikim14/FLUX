@@ -35,10 +35,13 @@ CREATE TABLE IF NOT EXISTS messages (
     recipient_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    read_at TIMESTAMPTZ,
     scheduled_for TIMESTAMPTZ,
     expires_at TIMESTAMPTZ,
     CHECK (sender_id <> recipient_id)
 );
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS messages_conversation_created_idx
     ON messages (sender_id, recipient_id, created_at);

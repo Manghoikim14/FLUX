@@ -61,6 +61,7 @@ function toClientMessage(message) {
     recipientId: message.recipient_id,
     content: message.content,
     createdAt: message.created_at,
+    readAt: message.read_at,
     expiresAt: message.expires_at,
   };
 }

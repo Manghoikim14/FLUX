@@ -111,7 +111,7 @@ router.get('/search/messages', async (req, res, next) => {
 
   try {
     const result = await pool.query(
-      `SELECT m.id, m.sender_id, m.recipient_id, m.content, m.created_at,
+      `SELECT m.id, m.sender_id, m.recipient_id, m.content, m.created_at, m.read_at,
               peer.id AS peer_id, peer.display_name AS peer_name
        FROM messages m
        JOIN users peer
@@ -135,6 +135,7 @@ router.get('/search/messages', async (req, res, next) => {
         recipientId: row.recipient_id,
         content: row.content,
         createdAt: row.created_at,
+        readAt: row.read_at,
         peerId: row.peer_id,
         peerName: row.peer_name,
       })),
@@ -230,11 +231,23 @@ router.post('/requests/:requestId/reject', async (req, res, next) => {
 router.get('/', async (req, res, next) => {
   try {
     const result = await pool.query(
-      `SELECT u.id, u.display_name, u.language
+      `SELECT u.id, u.display_name, u.language,
+              latest_message.content AS last_message,
+              latest_message.created_at AS last_message_time
        FROM friendships f
        JOIN users u ON u.id = CASE WHEN f.user_low = $1 THEN f.user_high ELSE f.user_low END
+       LEFT JOIN LATERAL (
+         SELECT m.content, m.created_at
+         FROM messages m
+         WHERE ((m.sender_id = $1 AND m.recipient_id = u.id)
+             OR (m.sender_id = u.id AND m.recipient_id = $1))
+           AND (m.expires_at IS NULL OR m.expires_at > NOW())
+           AND (m.scheduled_for IS NULL OR m.scheduled_for <= NOW())
+         ORDER BY m.created_at DESC
+         LIMIT 1
+       ) latest_message ON TRUE
        WHERE f.user_low = $1 OR f.user_high = $1
-       ORDER BY u.display_name`,
+       ORDER BY latest_message.created_at DESC NULLS LAST, u.display_name`,
       [req.user.id],
     );
     return res.json({
@@ -242,8 +255,35 @@ router.get('/', async (req, res, next) => {
         id: row.id,
         displayName: row.display_name,
         language: row.language,
+        lastMessage: row.last_message || '',
+        lastMessageTime: row.last_message_time,
       })),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/:friendId', async (req, res, next) => {
+  const friendId = req.params.friendId.toLowerCase();
+  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(friendId)) {
+    return res.status(400).json({ error: 'Invalid friend ID.' });
+  }
+
+  try {
+    const [low, high] = [req.user.id, friendId].sort();
+    const result = await pool.query(
+      'DELETE FROM friendships WHERE user_low = $1 AND user_high = $2 RETURNING user_low',
+      [low, high],
+    );
+    if (!result.rowCount) {
+      return res.status(404).json({ error: 'Friendship not found.' });
+    }
+
+    const io = req.app.get('io');
+    io.to(`user:${req.user.id}`).emit('friends:updated');
+    io.to(`user:${friendId}`).emit('friends:updated');
+    return res.json({ friendId });
   } catch (error) {
     next(error);
   }
