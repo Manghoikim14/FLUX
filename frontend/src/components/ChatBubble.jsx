@@ -95,6 +95,9 @@ export default function ChatBubble({
             >
               <Languages size={14} />
             </button>
+            <time className="message-timestamp" dateTime={message.createdAt}>
+              {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </time>
           </div>
         </article>
         {showActions && (

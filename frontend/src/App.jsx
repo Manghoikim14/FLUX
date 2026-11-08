@@ -76,6 +76,7 @@ export default function App() {
   const [replyingTo, setReplyingTo] = useState(null);
   const [forwardingMessage, setForwardingMessage] = useState(null);
   const [messageInfo, setMessageInfo] = useState(null);
+  const [messageDeleteConfirmation, setMessageDeleteConfirmation] = useState(null);
   const [sendNotice, setSendNotice] = useState('');
   const draftInput = useRef(null);
   const [scheduledFor, setScheduledFor] = useState('');
@@ -649,7 +650,11 @@ export default function App() {
 
   function deleteMessage(message, forEveryone) {
     if (!socket) return;
-    if (forEveryone && !window.confirm('Delete this message for everyone?')) return;
+    setMessageDeleteConfirmation({ message, forEveryone });
+  }
+
+  function sendDeleteMessage(message, forEveryone) {
+    if (!socket) return;
     socket.emit('chat:delete-message', { messageId: message.id, forEveryone }, (result) => {
       if (!result) {
         setError('No response from server.');
@@ -1294,6 +1299,47 @@ export default function App() {
                       <p><strong>Deletes at:</strong> {new Date(messageInfo.expiresAt).toLocaleString()}</p>
                     )}
                     <button type="button" onClick={() => setMessageInfo(null)}>Close</button>
+                  </section>
+                </div>
+              )}
+
+              {messageDeleteConfirmation && (
+                <div
+                  className="message-action-dialog"
+                  role="presentation"
+                  onClick={() => setMessageDeleteConfirmation(null)}
+                >
+                  <section
+                    className="message-action-card"
+                    role="alertdialog"
+                    aria-modal="true"
+                    aria-labelledby="delete-message-title"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <h2 id="delete-message-title">
+                      Delete message {messageDeleteConfirmation.forEveryone ? 'for everyone' : 'for me'}?
+                    </h2>
+                    <p>
+                      {messageDeleteConfirmation.forEveryone
+                        ? 'This message will be removed for you and the other person.'
+                        : 'This message will be hidden only from your account.'}
+                    </p>
+                    <div className="message-confirm-actions">
+                      <button type="button" onClick={() => setMessageDeleteConfirmation(null)}>
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="message-confirm-delete"
+                        onClick={() => {
+                          const { message, forEveryone } = messageDeleteConfirmation;
+                          setMessageDeleteConfirmation(null);
+                          sendDeleteMessage(message, forEveryone);
+                        }}
+                      >
+                        Delete for {messageDeleteConfirmation.forEveryone ? 'everyone' : 'me'}
+                      </button>
+                    </div>
                   </section>
                 </div>
               )}
