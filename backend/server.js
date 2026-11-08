@@ -74,6 +74,7 @@ async function authenticate(req, res, next) {
 }
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+app.use('/api/auth/account', authenticate);
 app.use('/api/auth', authRoutes);
 app.use('/api/friends', authenticate, friendRoutes);
 

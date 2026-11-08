@@ -240,6 +240,31 @@ router.post('/requests/:requestId/reject', async (req, res, next) => {
   }
 });
 
+router.post('/requests/:requestId/cancel', async (req, res, next) => {
+  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(req.params.requestId)) {
+    return res.status(400).json({ error: 'Invalid friend request.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `DELETE FROM friend_requests
+       WHERE id = $1 AND sender_id = $2 AND status = 'pending'
+       RETURNING id, recipient_id`,
+      [req.params.requestId, req.user.id],
+    );
+    if (!result.rowCount) {
+      return res.status(404).json({ error: 'Pending sent invitation not found.' });
+    }
+
+    const io = req.app.get('io');
+    io.to(`user:${req.user.id}`).emit('friends:updated');
+    io.to(`user:${result.rows[0].recipient_id}`).emit('friends:updated');
+    return res.json({ requestId: result.rows[0].id, canceled: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/', async (req, res, next) => {
   try {
     const result = await pool.query(

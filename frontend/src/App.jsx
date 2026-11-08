@@ -9,12 +9,15 @@ import {
   Clock3,
   Eye,
   EyeOff,
+  Globe2,
+  LockKeyhole,
   LogOut, 
   MessageCircle, 
   MoreVertical,
   Search,
   Send, 
   Settings, 
+  UserRound,
   Trash2,
   UserPlus, 
   UserMinus,
@@ -23,6 +26,7 @@ import {
 } from 'lucide-react';
 import {
   acceptFriendRequest,
+  cancelFriendRequest,
   getFriendRequests,
   getFriends,
   getSentFriendRequests,
@@ -33,6 +37,8 @@ import {
   requestFriend,
   searchMessages,
   unfriend,
+  updatePassword,
+  updateUsername,
 } from './services/api';
 import { connectSocket } from './services/socket';
 import ChatBubble from './components/ChatBubble';
@@ -79,7 +85,11 @@ export default function App() {
   const [messageInfo, setMessageInfo] = useState(null);
   const [messageDeleteConfirmation, setMessageDeleteConfirmation] = useState(null);
   const [sendNotice, setSendNotice] = useState('');
+  const scheduledNoticeMessageId = useRef(null);
   const draftInput = useRef(null);
+  const messageSearchField = useRef(null);
+  const chatListSearchField = useRef(null);
+  const chatListSearchToggle = useRef(null);
   const [scheduledFor, setScheduledFor] = useState('');
   const [scheduleIsSet, setScheduleIsSet] = useState(false);
   const [scheduleDate, setScheduleDate] = useState(() => {
@@ -95,11 +105,17 @@ export default function App() {
   const [customTtlUnit, setCustomTtlUnit] = useState(60);
   const [showMessageOptions, setShowMessageOptions] = useState(false);
   const [showDocument, setShowDocument] = useState(false);
+  const [accountDetailsOpen, setAccountDetailsOpen] = useState(false);
+  const [accountEdit, setAccountEdit] = useState(null);
+  const [accountSaving, setAccountSaving] = useState(false);
+  const [accountError, setAccountError] = useState('');
+  const [accountNotice, setAccountNotice] = useState('');
   const [authMode, setAuthMode] = useState('login');
   const [authLanguage, setAuthLanguage] = useState('en');
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [unfriendingId, setUnfriendingId] = useState(null);
+  const [cancelingRequestId, setCancelingRequestId] = useState(null);
   const [deletingChat, setDeletingChat] = useState(false);
   const [error, setError] = useState('');
 
@@ -112,6 +128,37 @@ export default function App() {
   activeFriendRef.current = activeFriend;
   friendsRef.current = friends;
   activeTabRef.current = activeTab;
+
+  useEffect(() => {
+    if (!showMessageSearch) return undefined;
+
+    function closeSearchOnOutsidePress(event) {
+      if (!messageSearchField.current?.contains(event.target)) {
+        setShowMessageSearch(false);
+        setMessageSearch('');
+      }
+    }
+
+    document.addEventListener('pointerdown', closeSearchOnOutsidePress);
+    return () => document.removeEventListener('pointerdown', closeSearchOnOutsidePress);
+  }, [showMessageSearch]);
+
+  useEffect(() => {
+    if (!showChatListSearch) return undefined;
+
+    function closeSearchOnOutsidePress(event) {
+      if (
+        !chatListSearchField.current?.contains(event.target) &&
+        !chatListSearchToggle.current?.contains(event.target)
+      ) {
+        setShowChatListSearch(false);
+        setChatListSearch('');
+      }
+    }
+
+    document.addEventListener('pointerdown', closeSearchOnOutsidePress);
+    return () => document.removeEventListener('pointerdown', closeSearchOnOutsidePress);
+  }, [showChatListSearch]);
 
   useEffect(() => {
     const input = draftInput.current;
@@ -319,6 +366,10 @@ export default function App() {
 
     client.on('notification:scheduled-message-sent', ({ messageId, peerId, createdAt }) => {
       if (typeof messageId !== 'string' || typeof peerId !== 'string') return;
+      if (scheduledNoticeMessageId.current === messageId) {
+        scheduledNoticeMessageId.current = null;
+        setSendNotice('');
+      }
       const friend = friendsRef.current.find((item) => item.id === peerId);
       addNotification({
         id: `scheduled-message-sent:${messageId}`,
@@ -590,6 +641,36 @@ export default function App() {
     await refreshContacts(session.token);
   }
 
+  async function handleAccountUpdate(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setAccountSaving(true);
+    setAccountError('');
+    setAccountNotice('');
+    try {
+      if (accountEdit === 'username') {
+        const result = await updateUsername(session.token, form.get('displayName'));
+        const updatedSession = { ...session, user: result.user };
+        localStorage.setItem('chat-session', JSON.stringify(updatedSession));
+        setSession(updatedSession);
+        setAccountNotice('Username updated.');
+      } else if (accountEdit === 'password') {
+        const newPassword = form.get('newPassword');
+        if (newPassword !== form.get('confirmPassword')) {
+          setAccountError('New passwords do not match.');
+          return;
+        }
+        await updatePassword(session.token, form.get('currentPassword'), newPassword);
+        setAccountNotice('Password updated.');
+      }
+      setAccountEdit(null);
+    } catch (accountUpdateError) {
+      setAccountError(accountUpdateError.message);
+    } finally {
+      setAccountSaving(false);
+    }
+  }
+
   async function handleAccept(requestId) {
     const result = await acceptFriendRequest(session.token, requestId);
     await refreshContacts(session.token);
@@ -606,6 +687,19 @@ export default function App() {
       await refreshContacts(session.token);
     } catch (rejectError) {
       setError(rejectError.message);
+    }
+  }
+
+  async function handleCancelFriendRequest(requestId) {
+    setError('');
+    setCancelingRequestId(requestId);
+    try {
+      await cancelFriendRequest(session.token, requestId);
+      setSentRequests((current) => current.filter((request) => request.id !== requestId));
+    } catch (cancelError) {
+      setError(cancelError.message);
+    } finally {
+      setCancelingRequestId(null);
     }
   }
 
@@ -825,6 +919,7 @@ export default function App() {
       } else {
         if (result.scheduled) {
           if (result.message) {
+            scheduledNoticeMessageId.current = result.message.id;
             setMessages((current) => current.some((item) => item.id === result.message.id)
               ? current
               : [...current, result.message]);
@@ -858,48 +953,50 @@ export default function App() {
 
   if (!session) {
     return (
-      <main className="auth-page">
-        <section className="auth-card">
-          <div className="brand-mark"><MessageCircle size={22} /></div>
-          <p className="eyebrow">YOUR SPACE TO CONNECT</p>
-          <h1>{authMode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
-          <p className="muted">Private conversations, made a little more personal.</p>
+      <main className={`auth-page ${authMode === 'register' ? 'auth-page-register' : ''}`}>
+        <section className={`auth-card ${authMode === 'register' ? 'auth-card-register' : ''}`}>
+          <h1>{authMode === 'login' ? 'Welcome Back' : 'Create your account'}</h1>
           <form onSubmit={handleAuth} className="auth-form">
             {authMode === 'register' && (
               <>
-                <label>Display name<input name="displayName" required maxLength={60} /></label>
+                <label className="auth-field">User name<input className="auth-input" name="displayName" required maxLength={60} /></label>
                 <LanguageSelect value={authLanguage} onChange={setAuthLanguage} label="Your language" />
               </>
             )}
-            <label>Email<input type="email" name="email" required autoComplete="email" /></label>
-            <label>
-              Password
-              <span className="password-input-wrap">
-                <input type={showPassword ? 'text' : 'password'} name="password" required minLength={8} autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} />
+            <label className="auth-field">Email<input className="auth-input" type="email" name="email" required autoComplete="email" /></label>
+            <label className="auth-field">Password
+              <span className="auth-password-field">
+                <input className="auth-input" type={showPassword ? 'text' : 'password'} name="password" required minLength={8} autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} />
                 <button
                   type="button"
                   className="password-visibility-button"
+                  onClick={() => setShowPassword((visible) => !visible)}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                   aria-pressed={showPassword}
-                  onClick={() => setShowPassword((visible) => !visible)}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </span>
             </label>
+            {authMode === 'login' && <p className="forgot-password">Forgot password?</p>}
             {error && <p className="form-error">{error}</p>}
             <button className="primary-button" disabled={busy}>{busy ? 'Please wait...' : authMode === 'login' ? 'Sign in' : 'Create account'}</button>
           </form>
           <button className="text-button auth-switch" onClick={() => { setError(''); setAuthMode(authMode === 'login' ? 'register' : 'login'); }}>
-            {authMode === 'login' ? 'New here? Create an account' : 'Already have an account? Sign in'}
+            {authMode === 'login'
+              ? <><span>New here?</span> <span className="auth-switch-muted">Create an account</span></>
+              : <><span>Already have an account?</span> <span className="auth-switch-muted">Sign in</span></>}
           </button>
+          {authMode === 'login' && (
+            <p className="auth-footer-caption">Private conversations, made<br />a little more personal.</p>
+          )}
         </section>
       </main>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-slate-100 font-sans max-w-md mx-auto shadow-2xl overflow-hidden border-x border-slate-200">
+    <div className={`flex flex-col h-screen bg-slate-100 font-sans max-w-md mx-auto shadow-2xl overflow-hidden border-x border-slate-200 ${activeTab === 'settings' ? 'settings-app' : ''} ${activeTab === 'friends' ? 'friends-app' : ''} ${activeTab === 'notifications' ? 'notifications-app' : ''} ${activeTab === 'chats' && !activeFriend ? 'active-chats-app' : ''} ${activeTab === 'chats' && activeFriend ? 'active-conversation-app' : ''}`}>
       
       {/* HEADER BAR */}
       <header className="app-header px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
@@ -908,23 +1005,47 @@ export default function App() {
             <button onClick={() => setActiveFriend(null)} className="p-1 rounded-full hover:bg-slate-100 text-slate-600 mr-1">
               <ArrowLeft size={20} />
             </button>
+          ) : activeTab === 'settings' ? (
+            <div className="settings-header-icon">
+              <Settings size={20} />
+            </div>
           ) : (
-            <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold">
-              <MessageCircle size={18} />
+            <div className={`w-8 h-8 rounded-lg ${activeTab === 'friends' ? 'friends-header-icon' : activeTab === 'chats' ? 'chat-header-icon' : 'bg-indigo-600'} text-white flex items-center justify-center font-bold`}>
+              {activeTab === 'friends' ? <UserPlus size={36} /> : <MessageCircle size={18} />}
             </div>
           )}
+          {activeFriend && activeTab === 'chats' && (
+            <span className="conversation-header-avatar" aria-hidden="true">
+              {activeFriend.displayName.slice(0, 1).toUpperCase()}
+            </span>
+          )}
           <h1 className="font-bold text-lg text-slate-800">
-            {activeTab === 'chats' ? (activeFriend ? activeFriend.displayName : 'Chats') :
-             activeTab === 'friends' ? 'Friends & Requests' :
+            {activeTab === 'chats' ? (activeFriend ? activeFriend.displayName : 'Chat') :
+             activeTab === 'friends' ? 'Add Friend' :
              activeTab === 'notifications' ? 'Notifications' : 'Settings'}
           </h1>
         </div>
 
+        <div className="header-actions">
+          <button
+            type="button"
+            className="header-profile"
+            onClick={() => setActiveTab('settings')}
+            aria-label={`Open ${session.user.displayName}'s profile`}
+            title={session.user.displayName}
+          >
+            <span className="header-profile-avatar" aria-hidden="true">
+              {session.user.displayName.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="header-profile-name">{session.user.displayName}</span>
+          </button>
+        </div>
         {activeTab === 'chats' && (
-          <div className="flex items-center gap-2">
+          <div className="chat-header-actions flex items-center gap-2">
             {!activeFriend ? (
               <button
                 type="button"
+                ref={chatListSearchToggle}
                 className={`p-2 rounded-full transition ${showChatListSearch ? 'bg-indigo-100 text-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
                 onClick={() => {
                   setShowChatListSearch((isVisible) => {
@@ -1010,20 +1131,6 @@ export default function App() {
             )}
           </div>
         )}
-        <div className="header-actions">
-          <button
-            type="button"
-            className="header-profile"
-            onClick={() => setActiveTab('settings')}
-            aria-label={`Open ${session.user.displayName}'s profile`}
-            title={session.user.displayName}
-          >
-            <span className="header-profile-avatar" aria-hidden="true">
-              {session.user.displayName.slice(0, 1).toUpperCase()}
-            </span>
-            <span className="header-profile-name">{session.user.displayName}</span>
-          </button>
-        </div>
       </header>
       
 
@@ -1039,7 +1146,7 @@ export default function App() {
             /* Active Conversation View */
             <div className="flex flex-col h-full">
               {showMessageSearch && (
-                <label className="search-field chat-message-search">
+                <label ref={messageSearchField} className="search-field chat-message-search">
                   <Search size={17} aria-hidden="true" />
                   <input
                     type="search"
@@ -1051,7 +1158,7 @@ export default function App() {
                   />
                 </label>
               )}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3">
+              <div className="flex-1 p-4 overflow-y-auto space-y-3 active-conversation-messages">
                 {chatLoading && messages.length === 0 && (
                   <p className="search-empty" role="status">Loading conversation…</p>
                 )}
@@ -1077,6 +1184,7 @@ export default function App() {
                     key={message.id} 
                     message={message} 
                     mine={message.senderId === session.user.id} 
+                    peerName={activeFriend.displayName}
                     targetLanguage={session.user.language} 
                     onReply={replyToMessage}
                     onCopy={copyMessage}
@@ -1090,7 +1198,7 @@ export default function App() {
 
               {/* Shared Document Overlay */}
               {showDocument && (
-                <div className="absolute inset-0 bg-white z-10 p-4">
+                <div className="absolute inset-0 bg-white z-10 p-4 shared-notes-overlay">
                   <DocumentEditor socket={socket} peerId={activeFriend.id} onClose={() => setShowDocument(false)} />
                 </div>
               )}
@@ -1388,9 +1496,9 @@ export default function App() {
             </div>
           ) : (
             /* Friends / Recent Conversations List */
-            <div className="bg-white">
+            <div className="active-chats-list">
               {showChatListSearch && (
-                <label className="search-field">
+                <label ref={chatListSearchField} className="search-field">
                   <Search size={17} aria-hidden="true" />
                   <input
                     type="search"
@@ -1423,39 +1531,35 @@ export default function App() {
                     <button
                       key={friend.id}
                       onClick={() => openChat(friend)}
-                      className="w-full flex items-center space-x-3 p-4 hover:bg-slate-50 transition text-left"
+                      className="active-chat-row"
                     >
-                      <div className="relative shrink-0">
-                        <div className="w-12 h-12 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-lg">
+                      <div className="active-chat-avatar-wrap">
+                        <div className="active-chat-avatar">
                           {friend.displayName.slice(0, 1).toUpperCase()}
                         </div>
                         {onlineFriendIds.has(friend.id) && (
-                          <span
-                            className="w-3 h-3 bg-green-500 border-2 border-white rounded-full absolute bottom-0 right-0"
-                            aria-label="Online"
-                            title="Online"
-                          />
+                          <span className="active-chat-presence" aria-label="Online" title="Online" />
                         )}
                       </div>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-baseline mb-1">
-                          <h4 className={`text-sm truncate ${hasUnread ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'}`}>
+                      <div className="active-chat-copy">
+                        <div className="active-chat-heading">
+                          <h4 className={hasUnread ? 'has-unread' : ''}>
                             {friend.displayName}
                           </h4>
                           {friend.lastMessageTime && (
-                            <span className={`text-[10px] shrink-0 ml-2 ${hasUnread ? 'font-bold text-green-600' : 'text-slate-400'}`}>
+                            <span className="active-chat-time">
                               {new Date(friend.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
                         </div>
-                        <p className={`text-xs truncate ${hasUnread ? 'font-bold text-slate-900' : 'text-slate-500'}`}>
+                        <p className={hasUnread ? 'has-unread' : ''}>
                           {friend.lastMessage || 'Tap to start conversation'}
                         </p>
                       </div>
 
                       {hasUnread && (
-                        <span className="ml-2 bg-green-500 text-slate-950 text-[11px] font-extrabold px-2 py-0.5 rounded-full min-w-[20px] text-center shrink-0 shadow-sm">
+                        <span className="active-chat-unread">
                           {friend.unreadCount > 99 ? '99+' : friend.unreadCount}
                         </span>
                       )}
@@ -1497,7 +1601,20 @@ export default function App() {
 
         {/* 2. FRIENDS & REQUESTS TAB */}
         {activeTab === 'friends' && (
-          <div className="p-4 space-y-6">
+          <div className="friends-page">
+            <section className="add-friend-intro" aria-hidden="true">
+              <div className="add-friend-art" aria-hidden="true">
+                <span className="friend-art-person friend-art-person-one"><UserRound size={23} /></span>
+                <span className="friend-art-person friend-art-person-two"><UserRound size={27} /></span>
+                <span className="friend-art-person friend-art-person-three"><UserRound size={21} /></span>
+                <span className="friend-art-person friend-art-person-four"><UserRound size={25} /></span>
+                <span className="friend-art-person friend-art-person-five"><UserRound size={20} /></span>
+                <span className="friend-art-person friend-art-person-six"><UserRound size={23} /></span>
+                <span className="friend-art-chat"><MessageCircle size={16} /></span>
+                <span className="friend-art-plus"><UserPlus size={19} /></span>
+              </div>
+            </section>
+
             <label className="search-field">
               <Search size={17} aria-hidden="true" />
               <input
@@ -1508,8 +1625,8 @@ export default function App() {
                 aria-label="Search friends and requests"
               />
             </label>
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Add Friend</h3>
+
+            <div className="add-friend-form-card">
               <FriendRequest onSubmit={handleFriendRequest} />
             </div>
 
@@ -1573,7 +1690,21 @@ export default function App() {
                 filteredSentRequests.map((request) => (
                   <div key={request.id} className="bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between shadow-sm">
                     <span className="font-medium text-sm text-slate-800">{request.user.displayName}</span>
-                    <span className="invitation-pending">Pending</span>
+                    <div className="invitation-actions">
+                      <span className="invitation-pending">
+                        {request.status === 'pending' ? 'Pending' : request.status}
+                      </span>
+                      {request.status === 'pending' && (
+                        <button
+                          type="button"
+                          className="invitation-cancel-button"
+                          disabled={cancelingRequestId === request.id}
+                          onClick={() => handleCancelFriendRequest(request.id)}
+                        >
+                          {cancelingRequestId === request.id ? 'Canceling…' : 'Cancel'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))
               ) : (
@@ -1590,9 +1721,9 @@ export default function App() {
 
         {/* 3. NOTIFICATIONS TAB */}
         {activeTab === 'notifications' && (
-          <div className="p-4 space-y-3">
+          <div className="notifications-screen">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <span className="notifications-status">
                 {unreadNotifications ? `${unreadNotifications} Unread` : 'All caught up'}
               </span>
               {unreadNotifications > 0 && (
@@ -1615,10 +1746,10 @@ export default function App() {
                 <div 
                   key={notification.id} 
                   onClick={() => openNotification(notification)}
-                  className={`p-3 rounded-xl border transition cursor-pointer flex items-center justify-between ${notification.read ? 'bg-white border-slate-200' : 'bg-indigo-50/60 border-indigo-200'}`}
+                  className={`notification-entry ${notification.read ? '' : 'notification-entry-unread'}`}
                 >
                   <div className="flex items-center space-x-3">
-                    <span className="text-indigo-600">
+                    <span className="notification-entry-icon">
                       {notification.kind === 'friend-request'
                         ? <Users size={18} />
                         : notification.kind === 'friend-request-status'
@@ -1658,28 +1789,97 @@ export default function App() {
 
         {/* 4. SETTINGS TAB */}
         {activeTab === 'settings' && (
-          <div className="p-4 space-y-4">
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3">
-              <div className="w-12 h-12 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-lg">
-                {session.user.displayName.slice(0, 1).toUpperCase()}
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-800">{session.user.displayName}</h3>
-                <p className="text-xs text-slate-500 font-mono">Code: {session.user.friendCode}</p>
-              </div>
+          <div className="settings-screen">
+            <div className="settings-gear-art" aria-hidden="true">
+              <Settings className="settings-gear settings-gear-large" />
+              <Settings className="settings-gear settings-gear-medium" />
+              <Settings className="settings-gear settings-gear-small" />
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Account Settings</h4>
-              <div className="flex items-center justify-between py-2 border-b border-slate-100 text-sm">
+            <section className="settings-options" aria-labelledby="settings-account-title">
+              <h3 id="settings-account-title">Settings</h3>
+              <button
+                type="button"
+                className="settings-row settings-account-toggle"
+                aria-expanded={accountDetailsOpen}
+                aria-controls="settings-account-details"
+                onClick={() => setAccountDetailsOpen((open) => !open)}
+              >
+                <UserRound size={19} />
+                <span>Account</span>
+                {accountDetailsOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+              </button>
+              {accountDetailsOpen && (
+                <div id="settings-account-details" className="settings-account-details">
+                  <div className="settings-account-value">
+                    <p><strong>Username</strong><span>{session.user.displayName}</span></p>
+                    <button type="button" className="settings-account-change" onClick={() => {
+                      setAccountEdit('username');
+                      setAccountError('');
+                      setAccountNotice('');
+                    }}>Change</button>
+                  </div>
+                  <p><strong>User code</strong><span>{session.user.friendCode}</span></p>
+                  <p><strong>Email</strong><span>{session.user.email}</span></p>
+                  <div className="settings-account-value">
+                    <p><strong>Password</strong><span>••••••••</span></p>
+                    <button type="button" className="settings-account-change" onClick={() => {
+                      setAccountEdit('password');
+                      setAccountError('');
+                      setAccountNotice('');
+                    }}>Change</button>
+                  </div>
+                  {accountEdit && (
+                    <form className="settings-account-form" onSubmit={handleAccountUpdate}>
+                      {accountEdit === 'username' ? (
+                        <label>
+                          New username
+                          <input name="displayName" type="text" defaultValue={session.user.displayName} maxLength={60} required autoFocus />
+                        </label>
+                      ) : (
+                        <>
+                          <label>
+                            Current password
+                            <input name="currentPassword" type="password" autoComplete="current-password" required autoFocus />
+                          </label>
+                          <label>
+                            New password
+                            <input name="newPassword" type="password" minLength={8} maxLength={128} autoComplete="new-password" required />
+                          </label>
+                          <label>
+                            Confirm new password
+                            <input name="confirmPassword" type="password" minLength={8} maxLength={128} autoComplete="new-password" required />
+                          </label>
+                        </>
+                      )}
+                      {accountError && <p className="settings-account-feedback is-error" role="alert">{accountError}</p>}
+                      <div className="settings-account-form-actions">
+                        <button type="button" className="settings-account-cancel" onClick={() => {
+                          setAccountEdit(null);
+                          setAccountError('');
+                        }}>Cancel</button>
+                        <button type="submit" className="settings-account-save" disabled={accountSaving}>
+                          {accountSaving ? 'Saving…' : 'Save'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                  {accountNotice && <p className="settings-account-feedback" role="status">{accountNotice}</p>}
+                </div>
+              )}
+              <div className="settings-row">
+                <Globe2 size={19} />
                 <span>Language</span>
-                <span className="font-medium text-slate-600 uppercase">{session.user.language || 'EN'}</span>
+                <strong>{session.user.language || 'EN'}</strong>
               </div>
+            </section>
+
+            <div className="settings-signout">
               <button 
                 type="button"
                 disabled={busy}
                 onClick={signOut}
-                className="w-full mt-4 py-2.5 bg-red-50 text-red-600 rounded-xl font-semibold text-sm hover:bg-red-100 transition flex items-center justify-center space-x-2"
+                className="settings-signout-button"
               >
                 <LogOut size={16} />
                 <span>{busy ? 'Signing out…' : 'Sign Out'}</span>

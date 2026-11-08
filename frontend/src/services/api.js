@@ -25,6 +25,18 @@ export const login = (data) => request('/auth/login', {
   body: JSON.stringify(data),
 });
 
+export const updateUsername = (token, displayName) => request('/auth/account/username', {
+  method: 'POST',
+  token,
+  body: JSON.stringify({ displayName }),
+});
+
+export const updatePassword = (token, currentPassword, newPassword) => request('/auth/account/password', {
+  method: 'POST',
+  token,
+  body: JSON.stringify({ currentPassword, newPassword }),
+});
+
 export const getFriends = (token) => request('/friends', { token });
 export const unfriend = (token, friendId) => request(`/friends/${friendId}`, {
   method: 'DELETE',
@@ -50,6 +62,11 @@ export const acceptFriendRequest = (token, requestId) => request(`/friends/reque
 });
 
 export const rejectFriendRequest = (token, requestId) => request(`/friends/requests/${requestId}/reject`, {
+  method: 'POST',
+  token,
+});
+
+export const cancelFriendRequest = (token, requestId) => request(`/friends/requests/${requestId}/cancel`, {
   method: 'POST',
   token,
 });

@@ -82,4 +82,56 @@ router.post('/login', async (req, res, next) => {
   }
 });
 
+router.post('/account/username', async (req, res, next) => {
+  const displayName = typeof req.body.displayName === 'string' ? req.body.displayName.trim() : '';
+  if (displayName.length < 1 || displayName.length > 60) {
+    return res.status(400).json({ error: 'Username must be between 1 and 60 characters.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE users
+       SET display_name = $1
+       WHERE id = $2
+       RETURNING id, email, display_name, friend_code, language`,
+      [displayName, req.user.id],
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Account not found.' });
+    return res.json({ user: publicUser(result.rows[0]) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/account/password', async (req, res, next) => {
+  const { currentPassword, newPassword } = req.body;
+  if (typeof currentPassword !== 'string' ||
+      typeof newPassword !== 'string' ||
+      newPassword.length < 8 ||
+      newPassword.length > 128) {
+    return res.status(400).json({ error: 'Enter your current password and a new password (8-128 characters).' });
+  }
+
+  try {
+    const result = await pool.query(
+      'SELECT password_hash FROM users WHERE id = $1',
+      [req.user.id],
+    );
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: 'Account not found.' });
+    if (!(await bcrypt.compare(currentPassword, user.password_hash))) {
+      return res.status(401).json({ error: 'Current password is incorrect.' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await pool.query(
+      'UPDATE users SET password_hash = $1 WHERE id = $2',
+      [passwordHash, req.user.id],
+    );
+    return res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

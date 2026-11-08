@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Copy, Forward, Info, Languages, Reply, Trash2, X } from "lucide-react";
 import { translateText } from "../services/translation.js";
 
@@ -16,19 +16,57 @@ export default function ChatBubble({
   const [isTranslating, setIsTranslating] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const pressTimer = useRef(null);
+  const pressOrigin = useRef(null);
+  const wrapperRef = useRef(null);
 
   function cancelLongPress() {
     if (pressTimer.current) {
       clearTimeout(pressTimer.current);
       pressTimer.current = null;
     }
+    pressOrigin.current = null;
   }
 
   function startLongPress(event) {
-    if (event.target.closest("button")) return;
+    if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+    if (event.target instanceof Element && event.target.closest("button")) return;
     cancelLongPress();
+    pressOrigin.current = { x: event.clientX, y: event.clientY };
     pressTimer.current = setTimeout(() => setShowActions(true), 500);
   }
+
+  function handleContextMenu(event) {
+    event.preventDefault();
+    cancelLongPress();
+    setShowActions(true);
+  }
+
+  function handlePointerMove(event) {
+    if (!pressOrigin.current) return;
+    const distance = Math.hypot(
+      event.clientX - pressOrigin.current.x,
+      event.clientY - pressOrigin.current.y,
+    );
+    if (distance > 10) cancelLongPress();
+  }
+
+  useEffect(() => {
+    if (!showActions) return undefined;
+    function closeOnOutsideClick(event) {
+      if (!wrapperRef.current?.contains(event.target)) setShowActions(false);
+    }
+    function closeOnEscape(event) {
+      if (event.key === "Escape") setShowActions(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [showActions]);
+
+  useEffect(() => cancelLongPress, []);
 
   async function toggleTranslation() {
     if (!message?.content) return;
@@ -53,17 +91,18 @@ export default function ChatBubble({
   return (
     <div className={`message-row ${mine ? "message-row-mine" : "message-row-theirs"}`}>
       <div
-        className={`chat-bubble-wrapper message-context-anchor ${showActions ? "has-context-menu" : ""}`}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          setShowActions(true);
-        }}
-        onPointerDown={startLongPress}
-        onPointerUp={cancelLongPress}
-        onPointerLeave={cancelLongPress}
-        onPointerCancel={cancelLongPress}
+        ref={wrapperRef}
+        className={`chat-bubble-wrapper message-context-anchor${showActions ? " has-context-menu" : ""}`}
       >
-        <article className={`chat-bubble ${mine ? "chat-bubble-mine" : "chat-bubble-theirs"}`}>
+        <article
+          className={`chat-bubble ${mine ? "chat-bubble-mine" : "chat-bubble-theirs"}`}
+          onPointerDown={startLongPress}
+          onPointerUp={cancelLongPress}
+          onPointerLeave={cancelLongPress}
+          onPointerCancel={cancelLongPress}
+          onPointerMove={handlePointerMove}
+          onContextMenu={handleContextMenu}
+        >
           {message.replyToContent && (
             <blockquote className="message-reply-quote">{message.replyToContent}</blockquote>
           )}
