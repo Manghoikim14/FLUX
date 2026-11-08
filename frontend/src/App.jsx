@@ -9,22 +9,16 @@ import {
   Clock3,
   Eye,
   EyeOff,
-<<<<<<< HEAD
   Globe2,
   LockKeyhole,
-=======
->>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
   LogOut, 
   MessageCircle, 
   MoreVertical,
   Search,
   Send, 
   Settings, 
-<<<<<<< HEAD
   UserRound,
-=======
   Trash2,
->>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
   UserPlus, 
   UserMinus,
   Users,
@@ -877,7 +871,6 @@ export default function App() {
                 <LanguageSelect value={authLanguage} onChange={setAuthLanguage} label="Your language" />
               </>
             )}
-<<<<<<< HEAD
             <label className="auth-field">Email<input className="auth-input" type="email" name="email" required autoComplete="email" /></label>
             <label className="auth-field">Password
               <span className="auth-password-field">
@@ -887,30 +880,13 @@ export default function App() {
                   className="password-visibility-button"
                   onClick={() => setShowPassword((visible) => !visible)}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
                 >
                   {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
                 </button>
               </span>
             </label>
             {authMode === 'login' && <p className="forgot-password">Forgot password?</p>}
-=======
-            <label>Email<input type="email" name="email" required autoComplete="email" /></label>
-            <label>
-              Password
-              <span className="password-input-wrap">
-                <input type={showPassword ? 'text' : 'password'} name="password" required minLength={8} autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} />
-                <button
-                  type="button"
-                  className="password-visibility-button"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  aria-pressed={showPassword}
-                  onClick={() => setShowPassword((visible) => !visible)}
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </span>
-            </label>
->>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
             {error && <p className="form-error">{error}</p>}
             <button className="primary-button" disabled={busy}>{busy ? 'Please wait...' : authMode === 'login' ? 'Sign in' : 'Create account'}</button>
           </form>
@@ -956,7 +932,6 @@ export default function App() {
           </h1>
         </div>
 
-<<<<<<< HEAD
         {activeTab === 'settings' && (
           <button
             type="button"
@@ -968,22 +943,6 @@ export default function App() {
           </button>
         )}
 
-=======
-        <div className="header-actions">
-          <button
-            type="button"
-            className="header-profile"
-            onClick={() => setActiveTab('settings')}
-            aria-label={`Open ${session.user.displayName}'s profile`}
-            title={session.user.displayName}
-          >
-            <span className="header-profile-avatar" aria-hidden="true">
-              {session.user.displayName.slice(0, 1).toUpperCase()}
-            </span>
-            <span className="header-profile-name">{session.user.displayName}</span>
-          </button>
-        </div>
->>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
         {activeTab === 'chats' && (
           <div className="flex items-center gap-2">
             {!activeFriend ? (
@@ -1074,7 +1033,6 @@ export default function App() {
             )}
           </div>
         )}
-<<<<<<< HEAD
         {activeTab !== 'settings' && (
           <div className="header-actions">
             <button
@@ -1091,8 +1049,6 @@ export default function App() {
             </button>
           </div>
         )}
-=======
->>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
       </header>
       
 
@@ -1499,28 +1455,15 @@ export default function App() {
                         <div className="active-chat-avatar">
                           {friend.displayName.slice(0, 1).toUpperCase()}
                         </div>
-<<<<<<< HEAD
-                        <span className="active-chat-presence" aria-label="Online" />
+                        {onlineFriendIds.has(friend.id) && (
+                          <span className="active-chat-presence" aria-label="Online" title="Online" />
+                        )}
                       </div>
 
                       <div className="active-chat-copy">
                         <div className="active-chat-heading">
                           {/* Bold display name if unread */}
                           <h4 className={hasUnread ? 'has-unread' : ''}>
-=======
-                        {onlineFriendIds.has(friend.id) && (
-                          <span
-                            className="w-3 h-3 bg-green-500 border-2 border-white rounded-full absolute bottom-0 right-0"
-                            aria-label="Online"
-                            title="Online"
-                          />
-                        )}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-baseline mb-1">
-                          <h4 className={`text-sm truncate ${hasUnread ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'}`}>
->>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
                             {friend.displayName}
                           </h4>
                           {friend.lastMessageTime && (
@@ -1529,12 +1472,8 @@ export default function App() {
                             </span>
                           )}
                         </div>
-<<<<<<< HEAD
                         {/* Bold message preview text if unread */}
                         <p className={hasUnread ? 'has-unread' : ''}>
-=======
-                        <p className={`text-xs truncate ${hasUnread ? 'font-bold text-slate-900' : 'text-slate-500'}`}>
->>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
                           {friend.lastMessage || 'Tap to start conversation'}
                         </p>
                       </div>
@@ -1787,19 +1726,12 @@ export default function App() {
             <div className="settings-signout">
               <button 
                 type="button"
-<<<<<<< HEAD
-=======
                 disabled={busy}
->>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
                 onClick={signOut}
                 className="settings-signout-button"
               >
-<<<<<<< HEAD
-                <span>Sign Out</span>
-=======
                 <LogOut size={16} />
                 <span>{busy ? 'Signing out…' : 'Sign Out'}</span>
->>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
               </button>
             </div>
           </div>
