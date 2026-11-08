@@ -122,6 +122,18 @@ router.get('/search/messages', async (req, res, next) => {
        WHERE (m.sender_id = $1 OR m.recipient_id = $1)
          AND (m.expires_at IS NULL OR m.expires_at > NOW())
          AND (m.scheduled_for IS NULL OR m.scheduled_for <= NOW())
+         AND NOT EXISTS (
+           SELECT 1
+           FROM chat_history_clears history_clear
+           WHERE history_clear.user_id = $1
+             AND history_clear.peer_id = peer.id
+             AND m.created_at <= history_clear.cleared_at
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM chat_message_hides message_hide
+           WHERE message_hide.user_id = $1 AND message_hide.message_id = m.id
+         )
          AND STRPOS(LOWER(m.content), LOWER($2)) > 0
        ORDER BY m.created_at DESC
        LIMIT 100`,
@@ -243,6 +255,18 @@ router.get('/', async (req, res, next) => {
              OR (m.sender_id = u.id AND m.recipient_id = $1))
            AND (m.expires_at IS NULL OR m.expires_at > NOW())
            AND (m.scheduled_for IS NULL OR m.scheduled_for <= NOW())
+           AND NOT EXISTS (
+             SELECT 1
+             FROM chat_history_clears history_clear
+             WHERE history_clear.user_id = $1
+               AND history_clear.peer_id = u.id
+               AND m.created_at <= history_clear.cleared_at
+           )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM chat_message_hides message_hide
+             WHERE message_hide.user_id = $1 AND message_hide.message_id = m.id
+           )
          ORDER BY m.created_at DESC
          LIMIT 1
        ) latest_message ON TRUE
@@ -259,6 +283,43 @@ router.get('/', async (req, res, next) => {
         lastMessageTime: row.last_message_time,
       })),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/:friendId/messages', async (req, res, next) => {
+  const friendId = req.params.friendId.toLowerCase();
+  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(friendId)) {
+    return res.status(400).json({ error: 'Invalid friend ID.' });
+  }
+  if (friendId === req.user.id) {
+    return res.status(400).json({ error: 'You cannot clear a chat with yourself.' });
+  }
+
+  try {
+    const [low, high] = [req.user.id, friendId].sort();
+    const friendship = await pool.query(
+      'SELECT 1 FROM friendships WHERE user_low = $1 AND user_high = $2',
+      [low, high],
+    );
+    if (!friendship.rowCount) {
+      return res.status(404).json({ error: 'Friendship not found.' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO chat_history_clears (user_id, peer_id, cleared_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (user_id, peer_id)
+       DO UPDATE SET cleared_at = EXCLUDED.cleared_at
+       RETURNING cleared_at`,
+      [req.user.id, friendId],
+    );
+    req.app.get('io').to(`user:${req.user.id}`).emit('chat:history-cleared', {
+      peerId: friendId,
+      clearedAt: result.rows[0].cleared_at,
+    });
+    return res.json({ peerId: friendId, clearedAt: result.rows[0].cleared_at });
   } catch (error) {
     next(error);
   }

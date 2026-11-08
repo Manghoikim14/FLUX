@@ -16,14 +16,50 @@ if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET must be configured.');
 
 const app = express();
 const server = http.createServer(app);
-const allowedOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
-const io = new Server(server, { cors: { origin: allowedOrigin, methods: ['GET', 'POST'] } });
+const configuredOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+function isPrivateIPv4(hostname) {
+  const octets = hostname.split('.').map(Number);
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
+    return false;
+  }
+  const [first, second] = octets;
+  return first === 10 ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    (first === 169 && second === 254) ||
+    first === 127;
+}
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  if (configuredOrigins.includes(origin)) return true;
+  if (process.env.NODE_ENV === 'production') return false;
+
+  try {
+    const url = new URL(origin);
+    return url.protocol === 'http:' &&
+      url.port === '5173' &&
+      (url.hostname === 'localhost' || isPrivateIPv4(url.hostname));
+  } catch {
+    return false;
+  }
+}
+
+const corsOptions = {
+  origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
+  methods: ['GET', 'POST'],
+};
+const io = new Server(server, { cors: corsOptions });
 app.set('io', io);
 
-app.use(cors({ origin: allowedOrigin }));
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '32kb' }));
 
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   const authorization = req.headers.authorization || '';
   const [scheme, token] = authorization.split(' ');
   if (scheme !== 'Bearer' || !token) return res.status(401).json({ error: 'Authentication required.' });
@@ -49,12 +85,41 @@ app.use((error, req, res, next) => {
 attachChatSocket(io);
 let workers = [];
 const port = Number(process.env.PORT || 4000);
+const host = process.env.HOST || '0.0.0.0';
 
 async function startServer() {
   await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ');
+  await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ');
+  await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ');
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS chat_history_clears (
+       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+       peer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+       cleared_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+       PRIMARY KEY (user_id, peer_id),
+       CHECK (user_id <> peer_id)
+     )`,
+  );
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS chat_message_hides (
+       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+       message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+       hidden_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+       PRIMARY KEY (user_id, message_id)
+     )`,
+  );
+  await pool.query(
+    'ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id UUID REFERENCES messages(id) ON DELETE SET NULL',
+  );
+  await pool.query(
+    'ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_forwarded BOOLEAN NOT NULL DEFAULT FALSE',
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS messages_scheduled_for_idx ON messages (scheduled_for) WHERE scheduled_for IS NOT NULL',
+  );
   workers = [startDeletionWorker(io), startMessageWorker(io)];
-  server.listen(port, () => {
-    console.log(`Chat API listening on port ${port}`);
+  server.listen(port, host, () => {
+    console.log(`Chat API listening on ${host}:${port}`);
   });
 }
 

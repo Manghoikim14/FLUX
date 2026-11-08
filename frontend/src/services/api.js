@@ -1,4 +1,5 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+const API_URL = import.meta.env.VITE_API_URL
+  || `${window.location.protocol}//${window.location.hostname}:4000/api`;
 
 async function request(path, { token, ...options } = {}) {
   const response = await fetch(`${API_URL}${path}`, {
@@ -26,6 +27,10 @@ export const login = (data) => request('/auth/login', {
 
 export const getFriends = (token) => request('/friends', { token });
 export const unfriend = (token, friendId) => request(`/friends/${friendId}`, {
+  method: 'DELETE',
+  token,
+});
+export const deleteChatHistory = (token, friendId) => request(`/friends/${friendId}/messages`, {
   method: 'DELETE',
   token,
 });

@@ -9,15 +9,22 @@ import {
   Clock3,
   Eye,
   EyeOff,
+<<<<<<< HEAD
   Globe2,
   LockKeyhole,
+=======
+>>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
   LogOut, 
   MessageCircle, 
   MoreVertical,
   Search,
   Send, 
   Settings, 
+<<<<<<< HEAD
   UserRound,
+=======
+  Trash2,
+>>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
   UserPlus, 
   UserMinus,
   Users,
@@ -28,6 +35,7 @@ import {
   getFriendRequests,
   getFriends,
   getSentFriendRequests,
+  deleteChatHistory,
   login,
   rejectFriendRequest,
   register,
@@ -53,6 +61,7 @@ const savedSession = (() => {
 export default function App() {
   const [session, setSession] = useState(savedSession);
   const [friends, setFriends] = useState([]);
+  const [onlineFriendIds, setOnlineFriendIds] = useState(() => new Set());
   const [requests, setRequests] = useState([]);
   const [sentRequests, setSentRequests] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -74,6 +83,11 @@ export default function App() {
   const [messageSearch, setMessageSearch] = useState('');
   const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [draft, setDraft] = useState('');
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [forwardingMessage, setForwardingMessage] = useState(null);
+  const [messageInfo, setMessageInfo] = useState(null);
+  const [messageDeleteConfirmation, setMessageDeleteConfirmation] = useState(null);
+  const [sendNotice, setSendNotice] = useState('');
   const draftInput = useRef(null);
   const [scheduledFor, setScheduledFor] = useState('');
   const [scheduleIsSet, setScheduleIsSet] = useState(false);
@@ -95,6 +109,7 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [unfriendingId, setUnfriendingId] = useState(null);
+  const [deletingChat, setDeletingChat] = useState(false);
   const [error, setError] = useState('');
 
   const endOfMessages = useRef(null);
@@ -200,6 +215,19 @@ export default function App() {
       if (active) setError(connectError.message);
     });
 
+    client.on('presence:sync', ({ onlineFriendIds: onlineIds }) => {
+      if (Array.isArray(onlineIds)) setOnlineFriendIds(new Set(onlineIds));
+    });
+
+    client.on('presence:update', ({ userId, isOnline }) => {
+      setOnlineFriendIds((current) => {
+        const updated = new Set(current);
+        if (isOnline) updated.add(userId);
+        else updated.delete(userId);
+        return updated;
+      });
+    });
+
     client.on('chat:message', (message) => {
       const peerId = message.senderId === session.user.id ? message.recipientId : message.senderId;
       const isCurrentActiveChat =
@@ -208,7 +236,11 @@ export default function App() {
         document.visibilityState === 'visible';
 
       if (activeFriendRef.current?.id === peerId) {
-        setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+        setMessages((current) => {
+          const existingIndex = current.findIndex((item) => item.id === message.id);
+          if (existingIndex < 0) return [...current, message];
+          return current.map((item, index) => index === existingIndex ? message : item);
+        });
       }
       if (isCurrentActiveChat && message.senderId !== session.user.id) {
         client.emit('chat:read', { peerId: message.senderId });
@@ -224,7 +256,7 @@ export default function App() {
                 lastMessage: message.content,
                 lastMessageTime: message.createdAt || new Date().toISOString(),
                 unreadCount: isIncoming
-                  ? isCurrentActiveChat ? 0 : (friend.unreadCount || 0) + 1
+                  ? isCurrentActiveChat ? 0 : friend.unreadCount || 0
                   : friend.unreadCount || 0,
               };
             }
@@ -238,8 +270,86 @@ export default function App() {
       );
     });
 
-    client.on('chat:message-deleted', ({ id }) => {
+    client.on('notification:new-message', ({ messageId, peerId, preview, createdAt }) => {
+      if (typeof messageId !== 'string' || typeof peerId !== 'string') return;
+
+      const isCurrentActiveChat =
+        activeFriendRef.current?.id === peerId &&
+        activeTabRef.current === 'chats' &&
+        document.visibilityState === 'visible';
+      const messageTime = createdAt || new Date().toISOString();
+
+      setFriends((currentFriends) =>
+        currentFriends
+          .map((item) => item.id === peerId
+            ? {
+              ...item,
+              lastMessage: preview || item.lastMessage,
+              lastMessageTime: messageTime,
+              unreadCount: isCurrentActiveChat ? 0 : (item.unreadCount || 0) + 1,
+            }
+            : item)
+          .sort((first, second) => {
+            const firstTime = first.lastMessageTime ? new Date(first.lastMessageTime).getTime() : 0;
+            const secondTime = second.lastMessageTime ? new Date(second.lastMessageTime).getTime() : 0;
+            return secondTime - firstTime || first.displayName.localeCompare(second.displayName);
+          })
+      );
+    });
+
+    client.on('chat:message-deleted', ({ id, senderId, recipientId }) => {
       setMessages((current) => current.filter((message) => message.id !== id));
+      const peerId = senderId === session.user.id ? recipientId : senderId;
+      if (typeof peerId === 'string') {
+        refreshContacts(session.token).catch((loadError) => {
+          if (active) setError(loadError.message);
+        });
+      }
+    });
+
+    client.on('chat:message-hidden', ({ id, peerId }) => {
+      setMessages((current) => current.filter((message) => message.id !== id));
+      if (typeof peerId === 'string') {
+        refreshContacts(session.token).catch((loadError) => {
+          if (active) setError(loadError.message);
+        });
+      }
+    });
+
+    client.on('chat:history-cleared', ({ peerId }) => {
+      if (typeof peerId !== 'string') return;
+      if (activeFriendRef.current?.id === peerId) setMessages([]);
+      setFriends((current) => current.map((friend) => (
+        friend.id === peerId
+          ? { ...friend, lastMessage: '', lastMessageTime: null, unreadCount: 0 }
+          : friend
+      )));
+    });
+
+    client.on('notification:scheduled-message-sent', ({ messageId, peerId, createdAt }) => {
+      if (typeof messageId !== 'string' || typeof peerId !== 'string') return;
+      const friend = friendsRef.current.find((item) => item.id === peerId);
+      addNotification({
+        id: `scheduled-message-sent:${messageId}`,
+        kind: 'message-status',
+        peerId,
+        title: `Your scheduled message to ${friend?.displayName || 'your friend'} was sent`,
+        createdAt: createdAt || new Date().toISOString(),
+        read: false,
+      });
+    });
+
+    client.on('notification:message-deleted', ({ messageId, peerId, deletedAt }) => {
+      if (typeof messageId !== 'string' || typeof peerId !== 'string') return;
+      const friend = friendsRef.current.find((item) => item.id === peerId);
+      addNotification({
+        id: `message-deleted:${messageId}`,
+        kind: 'message-status',
+        peerId,
+        title: `Your timed message to ${friend?.displayName || 'your friend'} was deleted`,
+        createdAt: deletedAt || new Date().toISOString(),
+        read: false,
+      });
     });
 
     client.on('chat:read', ({ messageIds, readAt }) => {
@@ -303,12 +413,14 @@ export default function App() {
       refreshContacts(session.token).catch((loadError) => {
         if (active) setError(loadError.message);
       });
+      client.emit('presence:sync');
     });
 
     return () => {
       active = false;
       client.disconnect();
       setSocket(null);
+      setOnlineFriendIds(new Set());
     };
   }, [session, refreshContacts]);
 
@@ -440,6 +552,9 @@ export default function App() {
   function openChat(friend, searchResult = null) {
     setActiveFriend(friend);
     setActiveTab('chats');
+    setReplyingTo(null);
+    setMessageInfo(null);
+    setForwardingMessage(null);
     setSelectedSearchResult(searchResult);
     if (searchResult) {
       setMessageSearch(chatListSearch);
@@ -521,6 +636,80 @@ export default function App() {
     }
   }
 
+  async function handleDeleteChat(friend) {
+    if (!window.confirm(`Delete your chat history with ${friend.displayName}? This only clears it from your account.`)) return;
+    setError('');
+    setSendNotice('');
+    setDeletingChat(true);
+    try {
+      await deleteChatHistory(session.token, friend.id);
+      setMessages([]);
+      setFriends((current) => current.map((item) => (
+        item.id === friend.id
+          ? { ...item, lastMessage: '', lastMessageTime: null, unreadCount: 0 }
+          : item
+      )));
+      setMessageSearch('');
+      setShowMessageSearch(false);
+      setSendNotice('Chat history deleted from your account.');
+    } catch (deleteError) {
+      setError(deleteError.message);
+    } finally {
+      setDeletingChat(false);
+    }
+  }
+
+  async function copyMessage(message) {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setSendNotice('Message copied.');
+    } catch (copyError) {
+      setError(`Unable to copy message: ${copyError.message}`);
+    }
+  }
+
+  function replyToMessage(message) {
+    setReplyingTo(message);
+    draftInput.current?.focus();
+  }
+
+  function deleteMessage(message, forEveryone) {
+    if (!socket) return;
+    setMessageDeleteConfirmation({ message, forEveryone });
+  }
+
+  function sendDeleteMessage(message, forEveryone) {
+    if (!socket) return;
+    socket.emit('chat:delete-message', { messageId: message.id, forEveryone }, (result) => {
+      if (!result) {
+        setError('No response from server.');
+      } else if (result.error) {
+        setError(result.error);
+      } else if (!forEveryone) {
+        setMessages((current) => current.filter((item) => item.id !== message.id));
+        refreshContacts(session.token).catch((loadError) => setError(loadError.message));
+      }
+    });
+  }
+
+  function forwardMessageTo(message, friend) {
+    if (!socket) return;
+    socket.emit('chat:send', {
+      peerId: friend.id,
+      content: message.content,
+      forwarded: true,
+    }, (result) => {
+      if (!result) {
+        setError('No response from server.');
+      } else if (result.error) {
+        setError(result.error);
+      } else {
+        setSendNotice(`Message forwarded to ${friend.displayName}.`);
+        setForwardingMessage(null);
+      }
+    });
+  }
+
   async function openNotification(notification) {
     setNotifications((current) => current.map((item) => (
       item.id === notification.id ? { ...item, read: true } : item
@@ -592,40 +781,75 @@ export default function App() {
     setShowSchedulePicker(false);
   }
 
+  // --- REVISED & FIXED SENDMESSAGE FUNCTION ---
   function sendMessage(event) {
     event.preventDefault();
+    setSendNotice('');
     if (!draft.trim() || !socket || !activeFriend) return;
     if (!chatJoined) {
       setChatLoadError('This conversation is still connecting. Please wait and try again.');
       return;
     }
-    const messageTtlSeconds = ttlSeconds === 'custom'
+
+    const parsedTtl = ttlSeconds === 'custom'
       ? Number(customTtlAmount) * Number(customTtlUnit)
       : Number(ttlSeconds);
-    if (!Number.isInteger(messageTtlSeconds) || messageTtlSeconds < 0 || (messageTtlSeconds > 0 && messageTtlSeconds < 10)) {
+
+    const messageTtlSeconds = isNaN(parsedTtl) ? 0 : Math.max(0, parsedTtl);
+
+    if (messageTtlSeconds > 0 && messageTtlSeconds < 10) {
       setError('Choose a deletion time of at least 10 seconds.');
       return;
     }
+
     const content = draft.trim();
     setError('');
-    const eventName = scheduleIsSet ? 'chat:schedule' : 'chat:send';
+
+    let isoScheduledFor = null;
+    if (scheduleIsSet && scheduledFor) {
+      const scheduledDateObj = new Date(scheduledFor);
+      if (isNaN(scheduledDateObj.getTime())) {
+        setError('Invalid schedule date format.');
+        return;
+      }
+      isoScheduledFor = scheduledDateObj.toISOString();
+    }
+
+    const eventName = scheduleIsSet && isoScheduledFor ? 'chat:schedule' : 'chat:send';
     const payload = {
       peerId: activeFriend.id,
       content,
       ttlSeconds: messageTtlSeconds,
-      ...(scheduleIsSet ? { scheduledFor: new Date(scheduledFor).toISOString() } : {}),
+      ...(replyingTo ? { replyToId: replyingTo.id } : {}),
+      ...(scheduleIsSet && isoScheduledFor ? { scheduledFor: isoScheduledFor } : {}),
     };
+
     socket.emit(eventName, payload, (result) => {
-      if (result.error) setError(result.error);
-      else {
-        setFriends((currentFriends) =>
-          currentFriends.map((f) =>
-            f.id === activeFriend.id
-              ? { ...f, lastMessage: `You: ${content}`, lastMessageTime: new Date().toISOString() }
-              : f
-          )
-        );
+      if (!result) {
+        setError('No response from server.');
+        return;
+      }
+      if (result.error) {
+        setError(result.error);
+      } else {
+        if (result.scheduled) {
+          if (result.message) {
+            setMessages((current) => current.some((item) => item.id === result.message.id)
+              ? current
+              : [...current, result.message]);
+          }
+          setSendNotice(`Message scheduled for ${new Date(isoScheduledFor).toLocaleString()}.`);
+        } else {
+          setFriends((currentFriends) =>
+            currentFriends.map((f) =>
+              f.id === activeFriend.id
+                ? { ...f, lastMessage: `You: ${content}`, lastMessageTime: new Date().toISOString() }
+                : f
+            )
+          );
+        }
         setDraft('');
+        setReplyingTo(null);
         setScheduledFor('');
         setScheduleIsSet(false);
         setShowMessageOptions(false);
@@ -653,6 +877,7 @@ export default function App() {
                 <LanguageSelect value={authLanguage} onChange={setAuthLanguage} label="Your language" />
               </>
             )}
+<<<<<<< HEAD
             <label className="auth-field">Email<input className="auth-input" type="email" name="email" required autoComplete="email" /></label>
             <label className="auth-field">Password
               <span className="auth-password-field">
@@ -668,6 +893,24 @@ export default function App() {
               </span>
             </label>
             {authMode === 'login' && <p className="forgot-password">Forgot password?</p>}
+=======
+            <label>Email<input type="email" name="email" required autoComplete="email" /></label>
+            <label>
+              Password
+              <span className="password-input-wrap">
+                <input type={showPassword ? 'text' : 'password'} name="password" required minLength={8} autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} />
+                <button
+                  type="button"
+                  className="password-visibility-button"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword((visible) => !visible)}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </span>
+            </label>
+>>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
             {error && <p className="form-error">{error}</p>}
             <button className="primary-button" disabled={busy}>{busy ? 'Please wait...' : authMode === 'login' ? 'Sign in' : 'Create account'}</button>
           </form>
@@ -713,6 +956,7 @@ export default function App() {
           </h1>
         </div>
 
+<<<<<<< HEAD
         {activeTab === 'settings' && (
           <button
             type="button"
@@ -724,6 +968,22 @@ export default function App() {
           </button>
         )}
 
+=======
+        <div className="header-actions">
+          <button
+            type="button"
+            className="header-profile"
+            onClick={() => setActiveTab('settings')}
+            aria-label={`Open ${session.user.displayName}'s profile`}
+            title={session.user.displayName}
+          >
+            <span className="header-profile-avatar" aria-hidden="true">
+              {session.user.displayName.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="header-profile-name">{session.user.displayName}</span>
+          </button>
+        </div>
+>>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
         {activeTab === 'chats' && (
           <div className="flex items-center gap-2">
             {!activeFriend ? (
@@ -785,6 +1045,19 @@ export default function App() {
                     <button
                       type="button"
                       role="menuitem"
+                      className="chat-menu-delete-chat"
+                      disabled={deletingChat}
+                      onClick={() => {
+                        setShowChatMenu(false);
+                        handleDeleteChat(activeFriend);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                      <span>{deletingChat ? 'Deleting chat…' : 'Delete chat'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
                       className="chat-menu-unfriend"
                       disabled={unfriendingId === activeFriend.id}
                       onClick={() => {
@@ -801,6 +1074,7 @@ export default function App() {
             )}
           </div>
         )}
+<<<<<<< HEAD
         {activeTab !== 'settings' && (
           <div className="header-actions">
             <button
@@ -817,8 +1091,10 @@ export default function App() {
             </button>
           </div>
         )}
+=======
+>>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
       </header>
-     
+      
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 overflow-y-auto bg-slate-50 relative">
@@ -872,6 +1148,11 @@ export default function App() {
                     mine={message.senderId === session.user.id} 
                     peerName={activeFriend.displayName}
                     targetLanguage={session.user.language} 
+                    onReply={replyToMessage}
+                    onCopy={copyMessage}
+                    onForward={setForwardingMessage}
+                    onInfo={setMessageInfo}
+                    onDelete={deleteMessage}
                   />
                 ))}
                 <div ref={endOfMessages} />
@@ -886,11 +1167,25 @@ export default function App() {
 
               {/* Message Composer */}
               <form className="p-3 bg-white border-t border-slate-200 flex flex-col gap-2 shrink-0" onSubmit={sendMessage}>
+                {replyingTo && (
+                  <div className="message-reply-composer">
+                    <div>
+                      <strong>Replying to {replyingTo.senderId === session.user.id ? 'yourself' : activeFriend.displayName}</strong>
+                      <span>{replyingTo.content}</span>
+                    </div>
+                    <button type="button" aria-label="Cancel reply" onClick={() => setReplyingTo(null)}>
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <textarea
                     ref={draftInput}
                     value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
+                    onChange={(event) => {
+                      setDraft(event.target.value);
+                      setSendNotice('');
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
@@ -914,9 +1209,11 @@ export default function App() {
                     <span>Options</span>
                     <ChevronDown size={14} />
                   </button>
-                  <button 
+                  <button
+                    type="submit"
                     disabled={!draft.trim() || !chatJoined}
-                    className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-full transition shadow"
+                    className="message-send-button"
+                    aria-label="Send message"
                   >
                     <Send size={16} />
                   </button>
@@ -1058,7 +1355,106 @@ export default function App() {
                   </div>
                 )}
                 {error && <p className="text-xs text-red-500 px-1">{error}</p>}
+                {sendNotice && <p className="text-xs text-indigo-600 px-1" role="status">{sendNotice}</p>}
               </form>
+
+              {messageInfo && (
+                <div className="message-action-dialog" role="presentation" onClick={() => setMessageInfo(null)}>
+                  <section
+                    className="message-action-card"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="message-info-title"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <h2 id="message-info-title">Message info</h2>
+                    <p><strong>Sent:</strong> {new Date(messageInfo.createdAt).toLocaleString()}</p>
+                    <p><strong>Status:</strong> {
+                      messageInfo.scheduledFor
+                        ? 'Scheduled'
+                        : messageInfo.senderId !== session.user.id
+                          ? 'Received'
+                          : messageInfo.readAt
+                            ? `Seen ${new Date(messageInfo.readAt).toLocaleString()}`
+                            : 'Sent'
+                    }</p>
+                    {messageInfo.scheduledFor && (
+                      <p><strong>Scheduled for:</strong> {new Date(messageInfo.scheduledFor).toLocaleString()}</p>
+                    )}
+                    {messageInfo.expiresAt && (
+                      <p><strong>Deletes at:</strong> {new Date(messageInfo.expiresAt).toLocaleString()}</p>
+                    )}
+                    <button type="button" onClick={() => setMessageInfo(null)}>Close</button>
+                  </section>
+                </div>
+              )}
+
+              {messageDeleteConfirmation && (
+                <div
+                  className="message-action-dialog"
+                  role="presentation"
+                  onClick={() => setMessageDeleteConfirmation(null)}
+                >
+                  <section
+                    className="message-action-card"
+                    role="alertdialog"
+                    aria-modal="true"
+                    aria-labelledby="delete-message-title"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <h2 id="delete-message-title">
+                      Delete message {messageDeleteConfirmation.forEveryone ? 'for everyone' : 'for me'}?
+                    </h2>
+                    <p>
+                      {messageDeleteConfirmation.forEveryone
+                        ? 'This message will be removed for you and the other person.'
+                        : 'This message will be hidden only from your account.'}
+                    </p>
+                    <div className="message-confirm-actions">
+                      <button type="button" onClick={() => setMessageDeleteConfirmation(null)}>
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="message-confirm-delete"
+                        onClick={() => {
+                          const { message, forEveryone } = messageDeleteConfirmation;
+                          setMessageDeleteConfirmation(null);
+                          sendDeleteMessage(message, forEveryone);
+                        }}
+                      >
+                        Delete for {messageDeleteConfirmation.forEveryone ? 'everyone' : 'me'}
+                      </button>
+                    </div>
+                  </section>
+                </div>
+              )}
+
+              {forwardingMessage && (
+                <div className="message-action-dialog" role="presentation" onClick={() => setForwardingMessage(null)}>
+                  <section
+                    className="message-action-card"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="forward-message-title"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <h2 id="forward-message-title">Forward message</h2>
+                    <div className="message-forward-list">
+                      {friends.map((friend) => (
+                        <button
+                          key={friend.id}
+                          type="button"
+                          onClick={() => forwardMessageTo(forwardingMessage, friend)}
+                        >
+                          {friend.displayName}
+                        </button>
+                      ))}
+                    </div>
+                    <button type="button" onClick={() => setForwardingMessage(null)}>Cancel</button>
+                  </section>
+                </div>
+              )}
             </div>
           ) : (
             /* Friends / Recent Conversations List */
@@ -1103,6 +1499,7 @@ export default function App() {
                         <div className="active-chat-avatar">
                           {friend.displayName.slice(0, 1).toUpperCase()}
                         </div>
+<<<<<<< HEAD
                         <span className="active-chat-presence" aria-label="Online" />
                       </div>
 
@@ -1110,6 +1507,20 @@ export default function App() {
                         <div className="active-chat-heading">
                           {/* Bold display name if unread */}
                           <h4 className={hasUnread ? 'has-unread' : ''}>
+=======
+                        {onlineFriendIds.has(friend.id) && (
+                          <span
+                            className="w-3 h-3 bg-green-500 border-2 border-white rounded-full absolute bottom-0 right-0"
+                            aria-label="Online"
+                            title="Online"
+                          />
+                        )}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-baseline mb-1">
+                          <h4 className={`text-sm truncate ${hasUnread ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'}`}>
+>>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
                             {friend.displayName}
                           </h4>
                           {friend.lastMessageTime && (
@@ -1118,13 +1529,16 @@ export default function App() {
                             </span>
                           )}
                         </div>
+<<<<<<< HEAD
                         {/* Bold message preview text if unread */}
                         <p className={hasUnread ? 'has-unread' : ''}>
+=======
+                        <p className={`text-xs truncate ${hasUnread ? 'font-bold text-slate-900' : 'text-slate-500'}`}>
+>>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
                           {friend.lastMessage || 'Tap to start conversation'}
                         </p>
                       </div>
 
-                      {/* Black number inside green unread counter badge */}
                       {hasUnread && (
                         <span className="active-chat-unread">
                           {friend.unreadCount > 99 ? '99+' : friend.unreadCount}
@@ -1373,10 +1787,19 @@ export default function App() {
             <div className="settings-signout">
               <button 
                 type="button"
+<<<<<<< HEAD
+=======
+                disabled={busy}
+>>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
                 onClick={signOut}
                 className="settings-signout-button"
               >
+<<<<<<< HEAD
                 <span>Sign Out</span>
+=======
+                <LogOut size={16} />
+                <span>{busy ? 'Signing out…' : 'Sign Out'}</span>
+>>>>>>> bb0e95582598fc910b6e85d08c1382585767cf86
               </button>
             </div>
           </div>

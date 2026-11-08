@@ -1,33 +1,57 @@
-const { Queue, Worker } = require('bullmq');
 const pool = require('../config/db');
-const redisConnection = require('../config/redis');
-
-const queue = new Queue('message-deletions', { connection: redisConnection() });
-
-async function scheduleDeletion(messageId, ttlSeconds) {
-  await queue.add(
-    'delete',
-    { messageId },
-    { delay: ttlSeconds * 1000, removeOnComplete: true, removeOnFail: 1000 },
-  );
-}
 
 function startDeletionWorker(io) {
-  const worker = new Worker('message-deletions', async (job) => {
-    const result = await pool.query(
-      'DELETE FROM messages WHERE id = $1 RETURNING sender_id, recipient_id',
-      [job.data.messageId],
-    );
-    if (result.rowCount) {
-      const roomId = [result.rows[0].sender_id, result.rows[0].recipient_id].sort().join(':');
-      io.to(roomId).emit('chat:message-deleted', { id: job.data.messageId });
-    }
-  }, { connection: redisConnection() });
+  let isPolling = false;
+  let activePoll = Promise.resolve();
 
-  worker.on('failed', (job, error) => {
-    console.error(`Message deletion job ${job ? job.id : 'unknown'} failed:`, error);
-  });
-  return worker;
+  const poll = () => {
+    if (isPolling) return;
+    isPolling = true;
+    activePoll = pool.query(
+      `DELETE FROM messages AS message
+       USING (
+         SELECT id
+         FROM messages
+         WHERE expires_at IS NOT NULL AND expires_at <= NOW()
+         ORDER BY expires_at
+         LIMIT 100
+         FOR UPDATE SKIP LOCKED
+       ) AS expired
+       WHERE message.id = expired.id
+       RETURNING message.id, message.sender_id, message.recipient_id`,
+    ).then((result) => {
+      for (const row of result.rows) {
+        const roomId = [row.sender_id, row.recipient_id].sort().join(':');
+        io.to(roomId)
+          .to(`user:${row.sender_id}`)
+          .to(`user:${row.recipient_id}`)
+          .emit('chat:message-deleted', {
+            id: row.id,
+            senderId: row.sender_id,
+            recipientId: row.recipient_id,
+          });
+        io.to(`user:${row.sender_id}`).emit('notification:message-deleted', {
+          messageId: row.id,
+          peerId: row.recipient_id,
+          deletedAt: new Date().toISOString(),
+        });
+      }
+    }).catch((error) => {
+      console.error('Unable to delete expired messages:', error);
+    }).finally(() => {
+      isPolling = false;
+    });
+  };
+
+  poll();
+  const interval = setInterval(poll, 1000);
+
+  return {
+    async close() {
+      clearInterval(interval);
+      await activePoll;
+    }
+  };
 }
 
-module.exports = { queue, scheduleDeletion, startDeletionWorker };
+module.exports = { startDeletionWorker };
