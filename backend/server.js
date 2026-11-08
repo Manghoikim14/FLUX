@@ -23,7 +23,7 @@ app.set('io', io);
 app.use(cors({ origin: allowedOrigin }));
 app.use(express.json({ limit: '32kb' }));
 
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   const authorization = req.headers.authorization || '';
   const [scheme, token] = authorization.split(' ');
   if (scheme !== 'Bearer' || !token) return res.status(401).json({ error: 'Authentication required.' });
@@ -52,6 +52,11 @@ const port = Number(process.env.PORT || 4000);
 
 async function startServer() {
   await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ');
+  await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ');
+  await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ');
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS messages_scheduled_for_idx ON messages (scheduled_for) WHERE scheduled_for IS NOT NULL',
+  );
   workers = [startDeletionWorker(io), startMessageWorker(io)];
   server.listen(port, () => {
     console.log(`Chat API listening on port ${port}`);

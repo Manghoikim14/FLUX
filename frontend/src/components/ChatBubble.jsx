@@ -47,6 +47,11 @@ export default function ChatBubble({ message, mine }) {
           <p>{displayText}</p>
           {message.expiresAt && remaining && <span className="expiry">{remaining}</span>}
           <div className="message-meta">
+            {mine && message.scheduledFor && (
+              <span className="message-scheduled-status">
+                Scheduled for {new Date(message.scheduledFor).toLocaleString()}
+              </span>
+            )}
             {mine && message.readAt && (
               <span className="message-read-receipt" title="Seen" aria-label="Seen">
                 👁️

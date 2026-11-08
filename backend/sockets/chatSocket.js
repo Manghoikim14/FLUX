@@ -40,11 +40,12 @@ function attachChatSocket(io) {
         socket.join(roomId);
         socket.data.peers.set(roomId, peerId);
         const history = await pool.query(
-          `SELECT id, sender_id, recipient_id, content, created_at, read_at, expires_at
+          `SELECT id, sender_id, recipient_id, content, created_at, read_at,
+                  scheduled_for, expires_at
            FROM messages
            WHERE ((sender_id = $1 AND recipient_id = $2) OR (sender_id = $2 AND recipient_id = $1))
              AND (expires_at IS NULL OR expires_at > NOW())
-             AND (scheduled_for IS NULL OR scheduled_for <= NOW())
+             AND (scheduled_for IS NULL OR scheduled_for <= NOW() OR sender_id = $1)
            ORDER BY created_at DESC LIMIT 100`,
           [socket.userId, peerId],
         );
@@ -58,7 +59,7 @@ function attachChatSocket(io) {
     socket.on('chat:read', async ({ peerId } = {}) => {
       try {
         const roomId = roomIdFor(socket.userId, peerId || '');
-        if (typeof peerId !== 'string' || socket.data.peers.get(roomId) !== peerId) return;
+        if (typeof peerId !== 'string') return;
 
         const [low, high] = [socket.userId, peerId].sort();
         const friendship = await pool.query(
@@ -89,9 +90,8 @@ function attachChatSocket(io) {
     socket.on('chat:send', async (payload = {}, acknowledge = () => {}) => {
       try {
         const { peerId, content, ttlSeconds } = payload;
-        const roomId = roomIdFor(socket.userId, peerId || '');
-        if (socket.data.peers.get(roomId) !== peerId) {
-          return acknowledge({ error: 'Join this conversation before sending messages.' });
+        if (typeof peerId !== 'string' || peerId === socket.userId) {
+          return acknowledge({ error: 'Invalid recipient.' });
         }
         if (typeof content !== 'string' || !content.trim() || content.length > 4000) {
           return acknowledge({ error: 'Message must contain 1-4000 characters.' });
@@ -102,11 +102,17 @@ function attachChatSocket(io) {
         if (!Number.isInteger(ttl) || ttl < 0 || (ttl > 0 && ttl < 10) || ttl > maxTtl) {
           return acknowledge({ error: `Expiry must be 0 or between 10 and ${maxTtl} seconds.` });
         }
+        
+        const [low, high] = [socket.userId, peerId].sort();
         const friendship = await pool.query(
           'SELECT 1 FROM friendships WHERE user_low = $1 AND user_high = $2',
-          [[socket.userId, peerId].sort()[0], [socket.userId, peerId].sort()[1]],
+          [low, high],
         );
         if (!friendship.rowCount) return acknowledge({ error: 'You are not connected to this user.' });
+
+        const roomId = roomIdFor(socket.userId, peerId);
+        socket.join(roomId);
+        socket.data.peers.set(roomId, peerId);
 
         const expiresAt = ttl ? new Date(Date.now() + ttl * 1000) : null;
         const result = await pool.query(
@@ -116,13 +122,14 @@ function attachChatSocket(io) {
           [socket.userId, peerId, content.trim(), expiresAt],
         );
         const message = toClientMessage(result.rows[0]);
-        const { scheduleDeletion: enqueueDeletion } = require('../queues/deletionQueue');
-        if (ttl) await enqueueDeletion(message.id, ttl);
+        if (ttl) await scheduleDeletion(message.id, ttl);
+
         io.to(roomId).emit('chat:message', message);
         io.to(`user:${peerId}`).emit('notification:new-message', {
           messageId: message.id,
           peerId: socket.userId,
           preview: message.content.slice(0, 100),
+          createdAt: message.createdAt,
         });
         return acknowledge({ message });
       } catch (error) {
@@ -134,9 +141,8 @@ function attachChatSocket(io) {
     socket.on('chat:schedule', async (payload = {}, acknowledge = () => {}) => {
       try {
         const { peerId, content, scheduledFor, ttlSeconds } = payload;
-        const roomId = roomIdFor(socket.userId, peerId || '');
-        if (socket.data.peers.get(roomId) !== peerId) {
-          return acknowledge({ error: 'Join this conversation before scheduling messages.' });
+        if (typeof peerId !== 'string' || peerId === socket.userId) {
+          return acknowledge({ error: 'Invalid recipient.' });
         }
         if (typeof content !== 'string' || !content.trim() || content.length > 4000) {
           return acknowledge({ error: 'Message must contain 1-4000 characters.' });
@@ -152,16 +158,21 @@ function attachChatSocket(io) {
           [low, high],
         );
         if (!friendship.rowCount) return acknowledge({ error: 'You are not connected to this user.' });
-        const jobId = await scheduleMessage({
+
+        const roomId = roomIdFor(socket.userId, peerId);
+        socket.join(roomId);
+        socket.data.peers.set(roomId, peerId);
+
+        const message = await scheduleMessage({
           senderId: socket.userId,
           recipientId: peerId,
           content: content.trim(),
           scheduledFor,
           ttlSeconds: ttl,
         });
-        return acknowledge({ scheduled: true, jobId });
+        return acknowledge({ scheduled: true, message });
       } catch (error) {
-        if (error.message.startsWith('Scheduled time')) {
+        if (error.message && error.message.startsWith('Scheduled time')) {
           return acknowledge({ error: error.message });
         }
         console.error('Unable to schedule chat message:', error);
@@ -172,9 +183,6 @@ function attachChatSocket(io) {
     socket.on('document:join', async ({ peerId } = {}, acknowledge = () => {}) => {
       try {
         const roomId = roomIdFor(socket.userId, peerId || '');
-        if (socket.data.peers.get(roomId) !== peerId) {
-          return acknowledge({ error: 'Join this conversation before opening its document.' });
-        }
         const documentRoom = `document:${roomId}`;
         socket.join(documentRoom);
         const result = await pool.query(
@@ -193,9 +201,6 @@ function attachChatSocket(io) {
     socket.on('document:update', async ({ peerId, content } = {}, acknowledge = () => {}) => {
       try {
         const roomId = roomIdFor(socket.userId, peerId || '');
-        if (socket.data.peers.get(roomId) !== peerId || !socket.rooms.has(`document:${roomId}`)) {
-          return acknowledge({ error: 'Join this shared document before editing.' });
-        }
         if (typeof content !== 'string' || content.length > 20000) {
           return acknowledge({ error: 'Document must be 20000 characters or fewer.' });
         }

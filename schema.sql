@@ -48,6 +48,9 @@ CREATE INDEX IF NOT EXISTS messages_conversation_created_idx
 CREATE INDEX IF NOT EXISTS messages_expiry_idx
     ON messages (expires_at)
     WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS messages_scheduled_for_idx
+    ON messages (scheduled_for)
+    WHERE scheduled_for IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS collaborative_documents (
     room_id TEXT PRIMARY KEY,

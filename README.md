@@ -1,6 +1,6 @@
 # Chat Room
 
-A starter direct-messaging app with PostgreSQL persistence, Socket.IO chat and in-app notifications, Redis/BullMQ message scheduling and expiry, and a React/Vite client.
+A starter direct-messaging app with PostgreSQL persistence, Socket.IO chat and in-app notifications, PostgreSQL-backed scheduled delivery, Redis/BullMQ message expiry, and a React/Vite client.
 
 ## Requirements
 
@@ -20,7 +20,7 @@ A starter direct-messaging app with PostgreSQL persistence, Socket.IO chat and i
    npm run dev
    ```
 
-The backend adds the message read-receipt column to existing databases at startup. Sent messages show an eye to the sender after the recipient opens that conversation.
+The backend adds the message read-receipt, scheduling, and expiry columns and the scheduled-message index to existing databases at startup. Scheduled messages are stored in PostgreSQL and delivered by the backend, so Redis is not needed for scheduled sending. Redis is used for message expiry. Sent messages show an eye to the sender after the recipient opens that conversation.
 
 4. In another terminal, install and start the frontend:
 

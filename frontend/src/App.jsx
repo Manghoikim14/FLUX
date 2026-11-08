@@ -7,6 +7,8 @@ import {
   ChevronRight,
   ChevronDown,
   Clock3,
+  Eye,
+  EyeOff,
   LogOut, 
   MessageCircle, 
   MoreVertical,
@@ -69,6 +71,7 @@ export default function App() {
   const [messageSearch, setMessageSearch] = useState('');
   const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [draft, setDraft] = useState('');
+  const [sendNotice, setSendNotice] = useState('');
   const draftInput = useRef(null);
   const [scheduledFor, setScheduledFor] = useState('');
   const [scheduleIsSet, setScheduleIsSet] = useState(false);
@@ -87,6 +90,7 @@ export default function App() {
   const [showDocument, setShowDocument] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [authLanguage, setAuthLanguage] = useState('en');
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [unfriendingId, setUnfriendingId] = useState(null);
   const [error, setError] = useState('');
@@ -202,7 +206,11 @@ export default function App() {
         document.visibilityState === 'visible';
 
       if (activeFriendRef.current?.id === peerId) {
-        setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+        setMessages((current) => {
+          const existingIndex = current.findIndex((item) => item.id === message.id);
+          if (existingIndex < 0) return [...current, message];
+          return current.map((item, index) => index === existingIndex ? message : item);
+        });
       }
       if (isCurrentActiveChat && message.senderId !== session.user.id) {
         client.emit('chat:read', { peerId: message.senderId });
@@ -218,7 +226,7 @@ export default function App() {
                 lastMessage: message.content,
                 lastMessageTime: message.createdAt || new Date().toISOString(),
                 unreadCount: isIncoming
-                  ? isCurrentActiveChat ? 0 : (friend.unreadCount || 0) + 1
+                  ? isCurrentActiveChat ? 0 : friend.unreadCount || 0
                   : friend.unreadCount || 0,
               };
             }
@@ -230,6 +238,42 @@ export default function App() {
             return secondTime - firstTime || first.displayName.localeCompare(second.displayName);
           })
       );
+    });
+
+    client.on('notification:new-message', ({ messageId, peerId, preview, createdAt }) => {
+      if (typeof messageId !== 'string' || typeof peerId !== 'string') return;
+
+      const isCurrentActiveChat =
+        activeFriendRef.current?.id === peerId &&
+        activeTabRef.current === 'chats' &&
+        document.visibilityState === 'visible';
+      const messageTime = createdAt || new Date().toISOString();
+      const friend = friendsRef.current.find((item) => item.id === peerId);
+
+      setFriends((currentFriends) =>
+        currentFriends
+          .map((item) => item.id === peerId
+            ? {
+              ...item,
+              lastMessage: preview || item.lastMessage,
+              lastMessageTime: messageTime,
+              unreadCount: isCurrentActiveChat ? 0 : (item.unreadCount || 0) + 1,
+            }
+            : item)
+          .sort((first, second) => {
+            const firstTime = first.lastMessageTime ? new Date(first.lastMessageTime).getTime() : 0;
+            const secondTime = second.lastMessageTime ? new Date(second.lastMessageTime).getTime() : 0;
+            return secondTime - firstTime || first.displayName.localeCompare(second.displayName);
+          })
+      );
+      addNotification({
+        id: `new-message:${messageId}`,
+        kind: 'new-message',
+        peerId,
+        title: `New message from ${friend?.displayName || 'a friend'}${preview ? `: ${preview}` : ''}`,
+        createdAt: messageTime,
+        read: isCurrentActiveChat,
+      });
     });
 
     client.on('chat:message-deleted', ({ id }) => {
@@ -586,39 +630,73 @@ export default function App() {
     setShowSchedulePicker(false);
   }
 
+  // --- REVISED & FIXED SENDMESSAGE FUNCTION ---
   function sendMessage(event) {
     event.preventDefault();
+    setSendNotice('');
     if (!draft.trim() || !socket || !activeFriend) return;
     if (!chatJoined) {
       setChatLoadError('This conversation is still connecting. Please wait and try again.');
       return;
     }
-    const messageTtlSeconds = ttlSeconds === 'custom'
+
+    const parsedTtl = ttlSeconds === 'custom'
       ? Number(customTtlAmount) * Number(customTtlUnit)
       : Number(ttlSeconds);
-    if (!Number.isInteger(messageTtlSeconds) || messageTtlSeconds < 0 || (messageTtlSeconds > 0 && messageTtlSeconds < 10)) {
+
+    const messageTtlSeconds = isNaN(parsedTtl) ? 0 : Math.max(0, parsedTtl);
+
+    if (messageTtlSeconds > 0 && messageTtlSeconds < 10) {
       setError('Choose a deletion time of at least 10 seconds.');
       return;
     }
+
     const content = draft.trim();
     setError('');
-    const eventName = scheduleIsSet ? 'chat:schedule' : 'chat:send';
+
+    let isoScheduledFor = null;
+    if (scheduleIsSet && scheduledFor) {
+      const scheduledDateObj = new Date(scheduledFor);
+      if (isNaN(scheduledDateObj.getTime())) {
+        setError('Invalid schedule date format.');
+        return;
+      }
+      isoScheduledFor = scheduledDateObj.toISOString();
+    }
+
+    const eventName = scheduleIsSet && isoScheduledFor ? 'chat:schedule' : 'chat:send';
     const payload = {
       peerId: activeFriend.id,
       content,
       ttlSeconds: messageTtlSeconds,
-      ...(scheduleIsSet ? { scheduledFor: new Date(scheduledFor).toISOString() } : {}),
+      ...(scheduleIsSet && isoScheduledFor ? { scheduledFor: isoScheduledFor } : {}),
     };
+
     socket.emit(eventName, payload, (result) => {
-      if (result.error) setError(result.error);
-      else {
-        setFriends((currentFriends) =>
-          currentFriends.map((f) =>
-            f.id === activeFriend.id
-              ? { ...f, lastMessage: `You: ${content}`, lastMessageTime: new Date().toISOString() }
-              : f
-          )
-        );
+      if (!result) {
+        setError('No response from server.');
+        return;
+      }
+      if (result.error) {
+        setError(result.error);
+      } else {
+        if (result.scheduled) {
+          if (result.message) {
+            setMessages((current) => current.some((item) => item.id === result.message.id)
+              ? current
+              : [...current, result.message]);
+          }
+          setSendNotice(`Message scheduled for ${new Date(isoScheduledFor).toLocaleString()}.`);
+        } else {
+          setSendNotice('Message sent.');
+          setFriends((currentFriends) =>
+            currentFriends.map((f) =>
+              f.id === activeFriend.id
+                ? { ...f, lastMessage: `You: ${content}`, lastMessageTime: new Date().toISOString() }
+                : f
+            )
+          );
+        }
         setDraft('');
         setScheduledFor('');
         setScheduleIsSet(false);
@@ -651,7 +729,21 @@ export default function App() {
               </>
             )}
             <label>Email<input type="email" name="email" required autoComplete="email" /></label>
-            <label>Password<input type="password" name="password" required minLength={8} autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} /></label>
+            <label>
+              Password
+              <span className="password-input-wrap">
+                <input type={showPassword ? 'text' : 'password'} name="password" required minLength={8} autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} />
+                <button
+                  type="button"
+                  className="password-visibility-button"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword((visible) => !visible)}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </span>
+            </label>
             {error && <p className="form-error">{error}</p>}
             <button className="primary-button" disabled={busy}>{busy ? 'Please wait...' : authMode === 'login' ? 'Sign in' : 'Create account'}</button>
           </form>
@@ -777,7 +869,7 @@ export default function App() {
           </button>
         </div>
       </header>
-     
+      
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 overflow-y-auto bg-slate-50 relative">
@@ -848,7 +940,10 @@ export default function App() {
                   <textarea
                     ref={draftInput}
                     value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
+                    onChange={(event) => {
+                      setDraft(event.target.value);
+                      setSendNotice('');
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
@@ -872,9 +967,11 @@ export default function App() {
                     <span>Options</span>
                     <ChevronDown size={14} />
                   </button>
-                  <button 
+                  <button
+                    type="submit"
                     disabled={!draft.trim() || !chatJoined}
-                    className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-full transition shadow"
+                    className="message-send-button"
+                    aria-label="Send message"
                   >
                     <Send size={16} />
                   </button>
@@ -1016,6 +1113,7 @@ export default function App() {
                   </div>
                 )}
                 {error && <p className="text-xs text-red-500 px-1">{error}</p>}
+                {sendNotice && <p className="text-xs text-indigo-600 px-1" role="status">{sendNotice}</p>}
               </form>
             </div>
           ) : (
@@ -1066,7 +1164,6 @@ export default function App() {
 
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-baseline mb-1">
-                          {/* Bold display name if unread */}
                           <h4 className={`text-sm truncate ${hasUnread ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'}`}>
                             {friend.displayName}
                           </h4>
@@ -1076,13 +1173,11 @@ export default function App() {
                             </span>
                           )}
                         </div>
-                        {/* Bold message preview text if unread */}
                         <p className={`text-xs truncate ${hasUnread ? 'font-bold text-slate-900' : 'text-slate-500'}`}>
                           {friend.lastMessage || 'Tap to start conversation'}
                         </p>
                       </div>
 
-                      {/* Black number inside green unread counter badge */}
                       {hasUnread && (
                         <span className="ml-2 bg-green-500 text-slate-950 text-[11px] font-extrabold px-2 py-0.5 rounded-full min-w-[20px] text-center shrink-0 shadow-sm">
                           {friend.unreadCount > 99 ? '99+' : friend.unreadCount}
@@ -1305,11 +1400,13 @@ export default function App() {
                 <span className="font-medium text-slate-600 uppercase">{session.user.language || 'EN'}</span>
               </div>
               <button 
+                type="button"
+                disabled={busy}
                 onClick={signOut}
                 className="w-full mt-4 py-2.5 bg-red-50 text-red-600 rounded-xl font-semibold text-sm hover:bg-red-100 transition flex items-center justify-center space-x-2"
               >
                 <LogOut size={16} />
-                <span>Sign Out</span>
+                <span>{busy ? 'Signing out…' : 'Sign Out'}</span>
               </button>
             </div>
           </div>
