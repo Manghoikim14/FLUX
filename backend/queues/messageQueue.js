@@ -1,6 +1,6 @@
 const pool = require('../config/db');
 
-async function scheduleMessage({ senderId, recipientId, content, scheduledFor, ttlSeconds }) {
+async function scheduleMessage({ senderId, recipientId, content, scheduledFor, ttlSeconds, replyToId, replyToContent }) {
   const scheduledAt = new Date(scheduledFor);
   const delay = scheduledAt.getTime() - Date.now();
   if (!Number.isFinite(delay) || delay < 1000 || delay > 30 * 24 * 60 * 60 * 1000) {
@@ -8,19 +8,19 @@ async function scheduleMessage({ senderId, recipientId, content, scheduledFor, t
   }
 
   const result = await pool.query(
-    `INSERT INTO messages (sender_id, recipient_id, content, scheduled_for, expires_at)
+    `INSERT INTO messages (sender_id, recipient_id, content, scheduled_for, expires_at, reply_to_id)
      VALUES (
        $1, $2, $3, $4,
        CASE WHEN $5::integer > 0
          THEN $4::timestamptz + ($5::integer * INTERVAL '1 second')
          ELSE NULL
-       END
+       END, $6
      )
      RETURNING id, sender_id, recipient_id, content, created_at,
-               read_at, scheduled_for, expires_at`,
-    [senderId, recipientId, content, scheduledAt, ttlSeconds],
+               read_at, scheduled_for, expires_at, reply_to_id, is_forwarded`,
+    [senderId, recipientId, content, scheduledAt, ttlSeconds, replyToId || null],
   );
-  return toClientMessage(result.rows[0]);
+  return toClientMessage({ ...result.rows[0], reply_to_content: replyToContent || null });
 }
 
 async function deliverDueMessages(io) {
@@ -30,7 +30,8 @@ async function deliverDueMessages(io) {
     await client.query('BEGIN');
     const result = await client.query(
       `UPDATE messages AS message
-       SET scheduled_for = NULL
+       SET scheduled_for = NULL,
+           created_at = NOW()
        WHERE message.id IN (
          SELECT candidate.id
          FROM messages AS candidate
@@ -48,9 +49,26 @@ async function deliverDueMessages(io) {
        )
        RETURNING message.id, message.sender_id, message.recipient_id,
                  message.content, message.created_at, message.read_at,
+                 message.reply_to_id, message.is_forwarded,
                  message.expires_at`,
     );
     delivered = result.rows;
+    if (delivered.length) {
+      const replyResults = await client.query(
+        `SELECT message.id, replied.content AS reply_to_content
+         FROM messages message
+         LEFT JOIN messages replied ON replied.id = message.reply_to_id
+         WHERE message.id = ANY($1::uuid[])`,
+        [delivered.map((message) => message.id)],
+      );
+      const replyByMessageId = new Map(
+        replyResults.rows.map((row) => [row.id, row.reply_to_content]),
+      );
+      delivered = delivered.map((message) => ({
+        ...message,
+        reply_to_content: replyByMessageId.get(message.id) || null,
+      }));
+    }
 
     await client.query(
       `DELETE FROM messages AS message
@@ -90,18 +108,11 @@ async function deliverDueMessages(io) {
       preview: row.content.slice(0, 100),
       createdAt: row.created_at,
     });
-
-    if (row.expires_at) {
-      const ttlSeconds = Math.ceil((new Date(row.expires_at).getTime() - Date.now()) / 1000);
-      if (ttlSeconds > 0) {
-        try {
-          const { scheduleDeletion } = require('./deletionQueue');
-          await scheduleDeletion(row.id, ttlSeconds);
-        } catch (error) {
-          console.error(`Unable to schedule deletion for message ${row.id}:`, error);
-        }
-      }
-    }
+    io.to(`user:${row.sender_id}`).emit('notification:scheduled-message-sent', {
+      messageId: row.id,
+      peerId: row.recipient_id,
+      createdAt: new Date().toISOString(),
+    });
   }
 }
 
@@ -140,6 +151,9 @@ function toClientMessage(message) {
     content: message.content,
     createdAt: message.created_at,
     readAt: message.read_at,
+    replyToId: message.reply_to_id,
+    replyToContent: message.reply_to_content,
+    forwarded: message.is_forwarded,
     scheduledFor: message.scheduled_for,
     expiresAt: message.expires_at,
   };

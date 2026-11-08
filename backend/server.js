@@ -55,6 +55,29 @@ async function startServer() {
   await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ');
   await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ');
   await pool.query(
+    `CREATE TABLE IF NOT EXISTS chat_history_clears (
+       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+       peer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+       cleared_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+       PRIMARY KEY (user_id, peer_id),
+       CHECK (user_id <> peer_id)
+     )`,
+  );
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS chat_message_hides (
+       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+       message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+       hidden_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+       PRIMARY KEY (user_id, message_id)
+     )`,
+  );
+  await pool.query(
+    'ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id UUID REFERENCES messages(id) ON DELETE SET NULL',
+  );
+  await pool.query(
+    'ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_forwarded BOOLEAN NOT NULL DEFAULT FALSE',
+  );
+  await pool.query(
     'CREATE INDEX IF NOT EXISTS messages_scheduled_for_idx ON messages (scheduled_for) WHERE scheduled_for IS NOT NULL',
   );
   workers = [startDeletionWorker(io), startMessageWorker(io)];

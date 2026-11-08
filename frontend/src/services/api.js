@@ -29,6 +29,10 @@ export const unfriend = (token, friendId) => request(`/friends/${friendId}`, {
   method: 'DELETE',
   token,
 });
+export const deleteChatHistory = (token, friendId) => request(`/friends/${friendId}/messages`, {
+  method: 'DELETE',
+  token,
+});
 export const getFriendRequests = (token) => request('/friends/requests', { token });
 export const getSentFriendRequests = (token) => request('/friends/requests/sent', { token });
 export const searchMessages = (token, query) => request(`/friends/search/messages?q=${encodeURIComponent(query)}`, { token });

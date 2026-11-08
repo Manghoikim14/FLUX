@@ -38,7 +38,24 @@ CREATE TABLE IF NOT EXISTS messages (
     read_at TIMESTAMPTZ,
     scheduled_for TIMESTAMPTZ,
     expires_at TIMESTAMPTZ,
+    reply_to_id UUID REFERENCES messages(id) ON DELETE SET NULL,
+    is_forwarded BOOLEAN NOT NULL DEFAULT FALSE,
     CHECK (sender_id <> recipient_id)
+);
+
+CREATE TABLE IF NOT EXISTS chat_history_clears (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    peer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    cleared_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, peer_id),
+    CHECK (user_id <> peer_id)
+);
+
+CREATE TABLE IF NOT EXISTS chat_message_hides (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    hidden_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, message_id)
 );
 
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;

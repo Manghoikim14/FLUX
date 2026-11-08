@@ -15,6 +15,7 @@ import {
   Search,
   Send, 
   Settings, 
+  Trash2,
   UserPlus, 
   UserMinus,
   Users,
@@ -25,6 +26,7 @@ import {
   getFriendRequests,
   getFriends,
   getSentFriendRequests,
+  deleteChatHistory,
   login,
   rejectFriendRequest,
   register,
@@ -71,6 +73,9 @@ export default function App() {
   const [messageSearch, setMessageSearch] = useState('');
   const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [draft, setDraft] = useState('');
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [forwardingMessage, setForwardingMessage] = useState(null);
+  const [messageInfo, setMessageInfo] = useState(null);
   const [sendNotice, setSendNotice] = useState('');
   const draftInput = useRef(null);
   const [scheduledFor, setScheduledFor] = useState('');
@@ -93,6 +98,7 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [unfriendingId, setUnfriendingId] = useState(null);
+  const [deletingChat, setDeletingChat] = useState(false);
   const [error, setError] = useState('');
 
   const endOfMessages = useRef(null);
@@ -248,7 +254,6 @@ export default function App() {
         activeTabRef.current === 'chats' &&
         document.visibilityState === 'visible';
       const messageTime = createdAt || new Date().toISOString();
-      const friend = friendsRef.current.find((item) => item.id === peerId);
 
       setFriends((currentFriends) =>
         currentFriends
@@ -266,18 +271,61 @@ export default function App() {
             return secondTime - firstTime || first.displayName.localeCompare(second.displayName);
           })
       );
+    });
+
+    client.on('chat:message-deleted', ({ id, senderId, recipientId }) => {
+      setMessages((current) => current.filter((message) => message.id !== id));
+      const peerId = senderId === session.user.id ? recipientId : senderId;
+      if (typeof peerId === 'string') {
+        refreshContacts(session.token).catch((loadError) => {
+          if (active) setError(loadError.message);
+        });
+      }
+    });
+
+    client.on('chat:message-hidden', ({ id, peerId }) => {
+      setMessages((current) => current.filter((message) => message.id !== id));
+      if (typeof peerId === 'string') {
+        refreshContacts(session.token).catch((loadError) => {
+          if (active) setError(loadError.message);
+        });
+      }
+    });
+
+    client.on('chat:history-cleared', ({ peerId }) => {
+      if (typeof peerId !== 'string') return;
+      if (activeFriendRef.current?.id === peerId) setMessages([]);
+      setFriends((current) => current.map((friend) => (
+        friend.id === peerId
+          ? { ...friend, lastMessage: '', lastMessageTime: null, unreadCount: 0 }
+          : friend
+      )));
+    });
+
+    client.on('notification:scheduled-message-sent', ({ messageId, peerId, createdAt }) => {
+      if (typeof messageId !== 'string' || typeof peerId !== 'string') return;
+      const friend = friendsRef.current.find((item) => item.id === peerId);
       addNotification({
-        id: `new-message:${messageId}`,
-        kind: 'new-message',
+        id: `scheduled-message-sent:${messageId}`,
+        kind: 'message-status',
         peerId,
-        title: `New message from ${friend?.displayName || 'a friend'}${preview ? `: ${preview}` : ''}`,
-        createdAt: messageTime,
-        read: isCurrentActiveChat,
+        title: `Your scheduled message to ${friend?.displayName || 'your friend'} was sent`,
+        createdAt: createdAt || new Date().toISOString(),
+        read: false,
       });
     });
 
-    client.on('chat:message-deleted', ({ id }) => {
-      setMessages((current) => current.filter((message) => message.id !== id));
+    client.on('notification:message-deleted', ({ messageId, peerId, deletedAt }) => {
+      if (typeof messageId !== 'string' || typeof peerId !== 'string') return;
+      const friend = friendsRef.current.find((item) => item.id === peerId);
+      addNotification({
+        id: `message-deleted:${messageId}`,
+        kind: 'message-status',
+        peerId,
+        title: `Your timed message to ${friend?.displayName || 'your friend'} was deleted`,
+        createdAt: deletedAt || new Date().toISOString(),
+        read: false,
+      });
     });
 
     client.on('chat:read', ({ messageIds, readAt }) => {
@@ -478,6 +526,9 @@ export default function App() {
   function openChat(friend, searchResult = null) {
     setActiveFriend(friend);
     setActiveTab('chats');
+    setReplyingTo(null);
+    setMessageInfo(null);
+    setForwardingMessage(null);
     setSelectedSearchResult(searchResult);
     if (searchResult) {
       setMessageSearch(chatListSearch);
@@ -557,6 +608,76 @@ export default function App() {
     } finally {
       setUnfriendingId(null);
     }
+  }
+
+  async function handleDeleteChat(friend) {
+    if (!window.confirm(`Delete your chat history with ${friend.displayName}? This only clears it from your account.`)) return;
+    setError('');
+    setSendNotice('');
+    setDeletingChat(true);
+    try {
+      await deleteChatHistory(session.token, friend.id);
+      setMessages([]);
+      setFriends((current) => current.map((item) => (
+        item.id === friend.id
+          ? { ...item, lastMessage: '', lastMessageTime: null, unreadCount: 0 }
+          : item
+      )));
+      setMessageSearch('');
+      setShowMessageSearch(false);
+      setSendNotice('Chat history deleted from your account.');
+    } catch (deleteError) {
+      setError(deleteError.message);
+    } finally {
+      setDeletingChat(false);
+    }
+  }
+
+  async function copyMessage(message) {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setSendNotice('Message copied.');
+    } catch (copyError) {
+      setError(`Unable to copy message: ${copyError.message}`);
+    }
+  }
+
+  function replyToMessage(message) {
+    setReplyingTo(message);
+    draftInput.current?.focus();
+  }
+
+  function deleteMessage(message, forEveryone) {
+    if (!socket) return;
+    if (forEveryone && !window.confirm('Delete this message for everyone?')) return;
+    socket.emit('chat:delete-message', { messageId: message.id, forEveryone }, (result) => {
+      if (!result) {
+        setError('No response from server.');
+      } else if (result.error) {
+        setError(result.error);
+      } else if (!forEveryone) {
+        setMessages((current) => current.filter((item) => item.id !== message.id));
+        refreshContacts(session.token).catch((loadError) => setError(loadError.message));
+      }
+    });
+  }
+
+  function forwardMessageTo(message, friend) {
+    if (!socket) return;
+    socket.emit('chat:send', {
+      peerId: friend.id,
+      content: message.content,
+      forwarded: true,
+    }, (result) => {
+      if (!result) {
+        setError('No response from server.');
+      } else if (result.error) {
+        setError(result.error);
+      } else {
+        setSendNotice(`Message forwarded to ${friend.displayName}.`);
+        setForwardingMessage(null);
+      }
+    });
   }
 
   async function openNotification(notification) {
@@ -669,6 +790,7 @@ export default function App() {
       peerId: activeFriend.id,
       content,
       ttlSeconds: messageTtlSeconds,
+      ...(replyingTo ? { replyToId: replyingTo.id } : {}),
       ...(scheduleIsSet && isoScheduledFor ? { scheduledFor: isoScheduledFor } : {}),
     };
 
@@ -688,7 +810,6 @@ export default function App() {
           }
           setSendNotice(`Message scheduled for ${new Date(isoScheduledFor).toLocaleString()}.`);
         } else {
-          setSendNotice('Message sent.');
           setFriends((currentFriends) =>
             currentFriends.map((f) =>
               f.id === activeFriend.id
@@ -698,6 +819,7 @@ export default function App() {
           );
         }
         setDraft('');
+        setReplyingTo(null);
         setScheduledFor('');
         setScheduleIsSet(false);
         setShowMessageOptions(false);
@@ -777,6 +899,20 @@ export default function App() {
           </h1>
         </div>
 
+        <div className="header-actions">
+          <button
+            type="button"
+            className="header-profile"
+            onClick={() => setActiveTab('settings')}
+            aria-label={`Open ${session.user.displayName}'s profile`}
+            title={session.user.displayName}
+          >
+            <span className="header-profile-avatar" aria-hidden="true">
+              {session.user.displayName.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="header-profile-name">{session.user.displayName}</span>
+          </button>
+        </div>
         {activeTab === 'chats' && (
           <div className="flex items-center gap-2">
             {!activeFriend ? (
@@ -838,6 +974,19 @@ export default function App() {
                     <button
                       type="button"
                       role="menuitem"
+                      className="chat-menu-delete-chat"
+                      disabled={deletingChat}
+                      onClick={() => {
+                        setShowChatMenu(false);
+                        handleDeleteChat(activeFriend);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                      <span>{deletingChat ? 'Deleting chat…' : 'Delete chat'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
                       className="chat-menu-unfriend"
                       disabled={unfriendingId === activeFriend.id}
                       onClick={() => {
@@ -854,20 +1003,6 @@ export default function App() {
             )}
           </div>
         )}
-        <div className="header-actions">
-          <button
-            type="button"
-            className="header-profile"
-            onClick={() => setActiveTab('settings')}
-            aria-label={`Open ${session.user.displayName}'s profile`}
-            title={session.user.displayName}
-          >
-            <span className="header-profile-avatar" aria-hidden="true">
-              {session.user.displayName.slice(0, 1).toUpperCase()}
-            </span>
-            <span className="header-profile-name">{session.user.displayName}</span>
-          </button>
-        </div>
       </header>
       
 
@@ -922,6 +1057,11 @@ export default function App() {
                     message={message} 
                     mine={message.senderId === session.user.id} 
                     targetLanguage={session.user.language} 
+                    onReply={replyToMessage}
+                    onCopy={copyMessage}
+                    onForward={setForwardingMessage}
+                    onInfo={setMessageInfo}
+                    onDelete={deleteMessage}
                   />
                 ))}
                 <div ref={endOfMessages} />
@@ -936,6 +1076,17 @@ export default function App() {
 
               {/* Message Composer */}
               <form className="p-3 bg-white border-t border-slate-200 flex flex-col gap-2 shrink-0" onSubmit={sendMessage}>
+                {replyingTo && (
+                  <div className="message-reply-composer">
+                    <div>
+                      <strong>Replying to {replyingTo.senderId === session.user.id ? 'yourself' : activeFriend.displayName}</strong>
+                      <span>{replyingTo.content}</span>
+                    </div>
+                    <button type="button" aria-label="Cancel reply" onClick={() => setReplyingTo(null)}>
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <textarea
                     ref={draftInput}
@@ -1115,6 +1266,63 @@ export default function App() {
                 {error && <p className="text-xs text-red-500 px-1">{error}</p>}
                 {sendNotice && <p className="text-xs text-indigo-600 px-1" role="status">{sendNotice}</p>}
               </form>
+
+              {messageInfo && (
+                <div className="message-action-dialog" role="presentation" onClick={() => setMessageInfo(null)}>
+                  <section
+                    className="message-action-card"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="message-info-title"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <h2 id="message-info-title">Message info</h2>
+                    <p><strong>Sent:</strong> {new Date(messageInfo.createdAt).toLocaleString()}</p>
+                    <p><strong>Status:</strong> {
+                      messageInfo.scheduledFor
+                        ? 'Scheduled'
+                        : messageInfo.senderId !== session.user.id
+                          ? 'Received'
+                          : messageInfo.readAt
+                            ? `Seen ${new Date(messageInfo.readAt).toLocaleString()}`
+                            : 'Sent'
+                    }</p>
+                    {messageInfo.scheduledFor && (
+                      <p><strong>Scheduled for:</strong> {new Date(messageInfo.scheduledFor).toLocaleString()}</p>
+                    )}
+                    {messageInfo.expiresAt && (
+                      <p><strong>Deletes at:</strong> {new Date(messageInfo.expiresAt).toLocaleString()}</p>
+                    )}
+                    <button type="button" onClick={() => setMessageInfo(null)}>Close</button>
+                  </section>
+                </div>
+              )}
+
+              {forwardingMessage && (
+                <div className="message-action-dialog" role="presentation" onClick={() => setForwardingMessage(null)}>
+                  <section
+                    className="message-action-card"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="forward-message-title"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <h2 id="forward-message-title">Forward message</h2>
+                    <div className="message-forward-list">
+                      {friends.map((friend) => (
+                        <button
+                          key={friend.id}
+                          type="button"
+                          onClick={() => forwardMessageTo(forwardingMessage, friend)}
+                        >
+                          {friend.displayName}
+                        </button>
+                      ))}
+                    </div>
+                    <button type="button" onClick={() => setForwardingMessage(null)}>Cancel</button>
+                  </section>
+                </div>
+              )}
             </div>
           ) : (
             /* Friends / Recent Conversations List */
