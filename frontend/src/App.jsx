@@ -920,20 +920,6 @@ export default function App() {
           </h1>
         </div>
 
-        <div className="header-actions">
-          <button
-            type="button"
-            className="header-profile"
-            onClick={() => setActiveTab('settings')}
-            aria-label={`Open ${session.user.displayName}'s profile`}
-            title={session.user.displayName}
-          >
-            <span className="header-profile-avatar" aria-hidden="true">
-              {session.user.displayName.slice(0, 1).toUpperCase()}
-            </span>
-            <span className="header-profile-name">{session.user.displayName}</span>
-          </button>
-        </div>
         {activeTab === 'chats' && (
           <div className="flex items-center gap-2">
             {!activeFriend ? (
@@ -1024,6 +1010,20 @@ export default function App() {
             )}
           </div>
         )}
+        <div className="header-actions">
+          <button
+            type="button"
+            className="header-profile"
+            onClick={() => setActiveTab('settings')}
+            aria-label={`Open ${session.user.displayName}'s profile`}
+            title={session.user.displayName}
+          >
+            <span className="header-profile-avatar" aria-hidden="true">
+              {session.user.displayName.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="header-profile-name">{session.user.displayName}</span>
+          </button>
+        </div>
       </header>
       
 
