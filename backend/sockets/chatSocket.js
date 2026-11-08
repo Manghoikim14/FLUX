@@ -2,8 +2,20 @@ const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
 const { scheduleMessage, toClientMessage } = require('../queues/messageQueue');
 
+const onlineSockets = new Map();
+
 function roomIdFor(firstId, secondId) {
   return [firstId, secondId].sort().join(':');
+}
+
+async function getFriendIds(userId) {
+  const result = await pool.query(
+    `SELECT CASE WHEN user_low = $1 THEN user_high ELSE user_low END AS friend_id
+     FROM friendships
+     WHERE user_low = $1 OR user_high = $1`,
+    [userId],
+  );
+  return result.rows.map((row) => row.friend_id);
 }
 
 function attachChatSocket(io) {
@@ -22,6 +34,37 @@ function attachChatSocket(io) {
   io.on('connection', (socket) => {
     socket.data.peers = new Map();
     socket.join(`user:${socket.userId}`);
+
+    let userSockets = onlineSockets.get(socket.userId);
+    const isFirstConnection = !userSockets;
+    if (!userSockets) {
+      userSockets = new Set();
+      onlineSockets.set(socket.userId, userSockets);
+    }
+    userSockets.add(socket.id);
+
+    async function sendPresenceSnapshot(broadcastOnline = false) {
+      try {
+        const friendIds = await getFriendIds(socket.userId);
+        socket.emit('presence:sync', {
+          onlineFriendIds: friendIds.filter((friendId) => onlineSockets.has(friendId)),
+        });
+        if (broadcastOnline && onlineSockets.get(socket.userId)?.has(socket.id)) {
+          friendIds.forEach((friendId) => {
+            io.to(`user:${friendId}`).emit('presence:update', {
+              userId: socket.userId,
+              isOnline: true,
+            });
+          });
+        }
+      } catch (error) {
+        console.error('Unable to sync friend presence:', error);
+      }
+    }
+
+    sendPresenceSnapshot(isFirstConnection);
+
+    socket.on('presence:sync', sendPresenceSnapshot);
 
     socket.on('chat:join', async ({ peerId } = {}, acknowledge = () => {}) => {
       try {
@@ -323,6 +366,26 @@ function attachChatSocket(io) {
         console.error('Unable to save collaborative document:', error);
         return acknowledge({ error: 'Document could not be saved.' });
       }
+    });
+
+    socket.on('disconnect', () => {
+      const currentSockets = onlineSockets.get(socket.userId);
+      currentSockets?.delete(socket.id);
+      if (currentSockets?.size) return;
+      onlineSockets.delete(socket.userId);
+
+      getFriendIds(socket.userId)
+        .then((friendIds) => {
+          if (!onlineSockets.has(socket.userId)) {
+            friendIds.forEach((friendId) => {
+              io.to(`user:${friendId}`).emit('presence:update', {
+                userId: socket.userId,
+                isOnline: false,
+              });
+            });
+          }
+        })
+        .catch((error) => console.error('Unable to broadcast friend presence:', error));
     });
   });
 }

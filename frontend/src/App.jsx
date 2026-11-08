@@ -52,6 +52,7 @@ const savedSession = (() => {
 export default function App() {
   const [session, setSession] = useState(savedSession);
   const [friends, setFriends] = useState([]);
+  const [onlineFriendIds, setOnlineFriendIds] = useState(() => new Set());
   const [requests, setRequests] = useState([]);
   const [sentRequests, setSentRequests] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -203,6 +204,19 @@ export default function App() {
 
     client.on('connect_error', (connectError) => {
       if (active) setError(connectError.message);
+    });
+
+    client.on('presence:sync', ({ onlineFriendIds: onlineIds }) => {
+      if (Array.isArray(onlineIds)) setOnlineFriendIds(new Set(onlineIds));
+    });
+
+    client.on('presence:update', ({ userId, isOnline }) => {
+      setOnlineFriendIds((current) => {
+        const updated = new Set(current);
+        if (isOnline) updated.add(userId);
+        else updated.delete(userId);
+        return updated;
+      });
     });
 
     client.on('chat:message', (message) => {
@@ -390,12 +404,14 @@ export default function App() {
       refreshContacts(session.token).catch((loadError) => {
         if (active) setError(loadError.message);
       });
+      client.emit('presence:sync');
     });
 
     return () => {
       active = false;
       client.disconnect();
       setSocket(null);
+      setOnlineFriendIds(new Set());
     };
   }, [session, refreshContacts]);
 
@@ -1413,7 +1429,13 @@ export default function App() {
                         <div className="w-12 h-12 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-lg">
                           {friend.displayName.slice(0, 1).toUpperCase()}
                         </div>
-                        <span className="w-3 h-3 bg-green-500 border-2 border-white rounded-full absolute bottom-0 right-0"></span>
+                        {onlineFriendIds.has(friend.id) && (
+                          <span
+                            className="w-3 h-3 bg-green-500 border-2 border-white rounded-full absolute bottom-0 right-0"
+                            aria-label="Online"
+                            title="Online"
+                          />
+                        )}
                       </div>
 
                       <div className="flex-1 min-w-0">

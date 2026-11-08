@@ -16,11 +16,47 @@ if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET must be configured.');
 
 const app = express();
 const server = http.createServer(app);
-const allowedOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
-const io = new Server(server, { cors: { origin: allowedOrigin, methods: ['GET', 'POST'] } });
+const configuredOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+function isPrivateIPv4(hostname) {
+  const octets = hostname.split('.').map(Number);
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
+    return false;
+  }
+  const [first, second] = octets;
+  return first === 10 ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    (first === 169 && second === 254) ||
+    first === 127;
+}
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  if (configuredOrigins.includes(origin)) return true;
+  if (process.env.NODE_ENV === 'production') return false;
+
+  try {
+    const url = new URL(origin);
+    return url.protocol === 'http:' &&
+      url.port === '5173' &&
+      (url.hostname === 'localhost' || isPrivateIPv4(url.hostname));
+  } catch {
+    return false;
+  }
+}
+
+const corsOptions = {
+  origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
+  methods: ['GET', 'POST'],
+};
+const io = new Server(server, { cors: corsOptions });
 app.set('io', io);
 
-app.use(cors({ origin: allowedOrigin }));
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '32kb' }));
 
 async function authenticate(req, res, next) {
@@ -49,6 +85,7 @@ app.use((error, req, res, next) => {
 attachChatSocket(io);
 let workers = [];
 const port = Number(process.env.PORT || 4000);
+const host = process.env.HOST || '0.0.0.0';
 
 async function startServer() {
   await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ');
@@ -81,8 +118,8 @@ async function startServer() {
     'CREATE INDEX IF NOT EXISTS messages_scheduled_for_idx ON messages (scheduled_for) WHERE scheduled_for IS NOT NULL',
   );
   workers = [startDeletionWorker(io), startMessageWorker(io)];
-  server.listen(port, () => {
-    console.log(`Chat API listening on port ${port}`);
+  server.listen(port, host, () => {
+    console.log(`Chat API listening on ${host}:${port}`);
   });
 }
 
