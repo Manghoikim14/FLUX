@@ -23,10 +23,10 @@ export default function DocumentEditor({ socket, peerId, onClose }) {
   }
 
   return (
-    <section className="document-panel">
-      <div className="section-heading">
+    <section className="document-panel shared-notes-panel">
+      <div className="shared-notes-heading">
         <div>
-          <h3>Shared notes</h3>
+          <h3>Shared Notes</h3>
           <p>Changes are saved and shared live.</p>
         </div>
         <button type="button" className="text-button" onClick={onClose}>Close</button>

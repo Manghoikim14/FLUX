@@ -7,12 +7,17 @@ import {
   ChevronRight,
   ChevronDown,
   Clock3,
+  Eye,
+  EyeOff,
+  Globe2,
+  LockKeyhole,
   LogOut, 
   MessageCircle, 
   MoreVertical,
   Search,
   Send, 
   Settings, 
+  UserRound,
   UserPlus, 
   UserMinus,
   Users,
@@ -63,7 +68,7 @@ export default function App() {
   const [chatSearchError, setChatSearchError] = useState('');
   const [selectedSearchResult, setSelectedSearchResult] = useState(null);
   const [chatListSearch, setChatListSearch] = useState('');
-  const [showChatListSearch, setShowChatListSearch] = useState(false);
+  const [showChatListSearch, setShowChatListSearch] = useState(true);
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [friendsSearch, setFriendsSearch] = useState('');
   const [messageSearch, setMessageSearch] = useState('');
@@ -87,6 +92,7 @@ export default function App() {
   const [showDocument, setShowDocument] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [authLanguage, setAuthLanguage] = useState('en');
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [unfriendingId, setUnfriendingId] = useState(null);
   const [error, setError] = useState('');
@@ -637,34 +643,49 @@ export default function App() {
 
   if (!session) {
     return (
-      <main className="auth-page">
-        <section className="auth-card">
-          <div className="brand-mark"><MessageCircle size={22} /></div>
-          <p className="eyebrow">YOUR SPACE TO CONNECT</p>
-          <h1>{authMode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
-          <p className="muted">Private conversations, made a little more personal.</p>
+      <main className={`auth-page ${authMode === 'register' ? 'auth-page-register' : ''}`}>
+        <section className={`auth-card ${authMode === 'register' ? 'auth-card-register' : ''}`}>
+          <h1>{authMode === 'login' ? 'Welcome Back' : 'Create your account'}</h1>
           <form onSubmit={handleAuth} className="auth-form">
             {authMode === 'register' && (
               <>
-                <label>Display name<input name="displayName" required maxLength={60} /></label>
+                <label className="auth-field">User name<input className="auth-input" name="displayName" required maxLength={60} /></label>
                 <LanguageSelect value={authLanguage} onChange={setAuthLanguage} label="Your language" />
               </>
             )}
-            <label>Email<input type="email" name="email" required autoComplete="email" /></label>
-            <label>Password<input type="password" name="password" required minLength={8} autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} /></label>
+            <label className="auth-field">Email<input className="auth-input" type="email" name="email" required autoComplete="email" /></label>
+            <label className="auth-field">Password
+              <span className="auth-password-field">
+                <input className="auth-input" type={showPassword ? 'text' : 'password'} name="password" required minLength={8} autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} />
+                <button
+                  type="button"
+                  className="password-visibility-button"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
+                </button>
+              </span>
+            </label>
+            {authMode === 'login' && <p className="forgot-password">Forgot password?</p>}
             {error && <p className="form-error">{error}</p>}
             <button className="primary-button" disabled={busy}>{busy ? 'Please wait...' : authMode === 'login' ? 'Sign in' : 'Create account'}</button>
           </form>
           <button className="text-button auth-switch" onClick={() => { setError(''); setAuthMode(authMode === 'login' ? 'register' : 'login'); }}>
-            {authMode === 'login' ? 'New here? Create an account' : 'Already have an account? Sign in'}
+            {authMode === 'login'
+              ? <><span>New here?</span> <span className="auth-switch-muted">Create an account</span></>
+              : <><span>Already have an account?</span> <span className="auth-switch-muted">Sign in</span></>}
           </button>
+          {authMode === 'login' && (
+            <p className="auth-footer-caption">Private conversations, made<br />a little more personal.</p>
+          )}
         </section>
       </main>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-slate-100 font-sans max-w-md mx-auto shadow-2xl overflow-hidden border-x border-slate-200">
+    <div className={`flex flex-col h-screen bg-slate-100 font-sans max-w-md mx-auto shadow-2xl overflow-hidden border-x border-slate-200 ${activeTab === 'settings' ? 'settings-app' : ''} ${activeTab === 'friends' ? 'friends-app' : ''} ${activeTab === 'notifications' ? 'notifications-app' : ''} ${activeTab === 'chats' && !activeFriend ? 'active-chats-app' : ''} ${activeTab === 'chats' && activeFriend ? 'active-conversation-app' : ''}`}>
       
       {/* HEADER BAR */}
       <header className="app-header px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
@@ -673,17 +694,35 @@ export default function App() {
             <button onClick={() => setActiveFriend(null)} className="p-1 rounded-full hover:bg-slate-100 text-slate-600 mr-1">
               <ArrowLeft size={20} />
             </button>
+          ) : activeTab === 'settings' ? (
+            null
           ) : (
             <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold">
               <MessageCircle size={18} />
             </div>
           )}
+          {activeFriend && activeTab === 'chats' && (
+            <span className="conversation-header-avatar" aria-hidden="true">
+              {activeFriend.displayName.slice(0, 1).toUpperCase()}
+            </span>
+          )}
           <h1 className="font-bold text-lg text-slate-800">
-            {activeTab === 'chats' ? (activeFriend ? activeFriend.displayName : 'Chats') :
-             activeTab === 'friends' ? 'Friends & Requests' :
+            {activeTab === 'chats' ? (activeFriend ? activeFriend.displayName : 'Active Chats') :
+             activeTab === 'friends' ? 'Add Friend' :
              activeTab === 'notifications' ? 'Notifications' : 'Settings'}
           </h1>
         </div>
+
+        {activeTab === 'settings' && (
+          <button
+            type="button"
+            className="settings-notifications-button"
+            onClick={() => setActiveTab('notifications')}
+            aria-label="Open notifications"
+          >
+            <Bell size={17} />
+          </button>
+        )}
 
         {activeTab === 'chats' && (
           <div className="flex items-center gap-2">
@@ -762,20 +801,22 @@ export default function App() {
             )}
           </div>
         )}
-        <div className="header-actions">
-          <button
-            type="button"
-            className="header-profile"
-            onClick={() => setActiveTab('settings')}
-            aria-label={`Open ${session.user.displayName}'s profile`}
-            title={session.user.displayName}
-          >
-            <span className="header-profile-avatar" aria-hidden="true">
-              {session.user.displayName.slice(0, 1).toUpperCase()}
-            </span>
-            <span className="header-profile-name">{session.user.displayName}</span>
-          </button>
-        </div>
+        {activeTab !== 'settings' && (
+          <div className="header-actions">
+            <button
+              type="button"
+              className="header-profile"
+              onClick={() => setActiveTab('settings')}
+              aria-label={`Open ${session.user.displayName}'s profile`}
+              title={session.user.displayName}
+            >
+              <span className="header-profile-avatar" aria-hidden="true">
+                {session.user.displayName.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="header-profile-name">{session.user.displayName}</span>
+            </button>
+          </div>
+        )}
       </header>
      
 
@@ -803,7 +844,7 @@ export default function App() {
                   />
                 </label>
               )}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3">
+              <div className="flex-1 p-4 overflow-y-auto space-y-3 active-conversation-messages">
                 {chatLoading && messages.length === 0 && (
                   <p className="search-empty" role="status">Loading conversation…</p>
                 )}
@@ -829,6 +870,7 @@ export default function App() {
                     key={message.id} 
                     message={message} 
                     mine={message.senderId === session.user.id} 
+                    peerName={activeFriend.displayName}
                     targetLanguage={session.user.language} 
                   />
                 ))}
@@ -837,7 +879,7 @@ export default function App() {
 
               {/* Shared Document Overlay */}
               {showDocument && (
-                <div className="absolute inset-0 bg-white z-10 p-4">
+                <div className="absolute inset-0 bg-white z-10 p-4 shared-notes-overlay">
                   <DocumentEditor socket={socket} peerId={activeFriend.id} onClose={() => setShowDocument(false)} />
                 </div>
               )}
@@ -1020,7 +1062,7 @@ export default function App() {
             </div>
           ) : (
             /* Friends / Recent Conversations List */
-            <div className="bg-white">
+            <div className="active-chats-list">
               {showChatListSearch && (
                 <label className="search-field">
                   <Search size={17} aria-hidden="true" />
@@ -1055,36 +1097,36 @@ export default function App() {
                     <button
                       key={friend.id}
                       onClick={() => openChat(friend)}
-                      className="w-full flex items-center space-x-3 p-4 hover:bg-slate-50 transition text-left"
+                      className="active-chat-row"
                     >
-                      <div className="relative shrink-0">
-                        <div className="w-12 h-12 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-lg">
+                      <div className="active-chat-avatar-wrap">
+                        <div className="active-chat-avatar">
                           {friend.displayName.slice(0, 1).toUpperCase()}
                         </div>
-                        <span className="w-3 h-3 bg-green-500 border-2 border-white rounded-full absolute bottom-0 right-0"></span>
+                        <span className="active-chat-presence" aria-label="Online" />
                       </div>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-baseline mb-1">
+                      <div className="active-chat-copy">
+                        <div className="active-chat-heading">
                           {/* Bold display name if unread */}
-                          <h4 className={`text-sm truncate ${hasUnread ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'}`}>
+                          <h4 className={hasUnread ? 'has-unread' : ''}>
                             {friend.displayName}
                           </h4>
                           {friend.lastMessageTime && (
-                            <span className={`text-[10px] shrink-0 ml-2 ${hasUnread ? 'font-bold text-green-600' : 'text-slate-400'}`}>
+                            <span className="active-chat-time">
                               {new Date(friend.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
                         </div>
                         {/* Bold message preview text if unread */}
-                        <p className={`text-xs truncate ${hasUnread ? 'font-bold text-slate-900' : 'text-slate-500'}`}>
+                        <p className={hasUnread ? 'has-unread' : ''}>
                           {friend.lastMessage || 'Tap to start conversation'}
                         </p>
                       </div>
 
                       {/* Black number inside green unread counter badge */}
                       {hasUnread && (
-                        <span className="ml-2 bg-green-500 text-slate-950 text-[11px] font-extrabold px-2 py-0.5 rounded-full min-w-[20px] text-center shrink-0 shadow-sm">
+                        <span className="active-chat-unread">
                           {friend.unreadCount > 99 ? '99+' : friend.unreadCount}
                         </span>
                       )}
@@ -1126,7 +1168,26 @@ export default function App() {
 
         {/* 2. FRIENDS & REQUESTS TAB */}
         {activeTab === 'friends' && (
-          <div className="p-4 space-y-6">
+          <div className="friends-page">
+            <section className="add-friend-intro" aria-labelledby="add-friend-heading">
+              <div className="add-friend-art" aria-hidden="true">
+                <span className="friend-art-person friend-art-person-one"><UserRound size={23} /></span>
+                <span className="friend-art-person friend-art-person-two"><UserRound size={27} /></span>
+                <span className="friend-art-person friend-art-person-three"><UserRound size={21} /></span>
+                <span className="friend-art-person friend-art-person-four"><UserRound size={25} /></span>
+                <span className="friend-art-person friend-art-person-five"><UserRound size={20} /></span>
+                <span className="friend-art-person friend-art-person-six"><UserRound size={23} /></span>
+                <span className="friend-art-chat"><MessageCircle size={16} /></span>
+                <span className="friend-art-plus"><UserPlus size={19} /></span>
+              </div>
+              <h2 id="add-friend-heading">Add Friend</h2>
+              <p>Connect with friends using their ID code.</p>
+            </section>
+
+            <div className="add-friend-form-card">
+              <FriendRequest onSubmit={handleFriendRequest} />
+            </div>
+
             <label className="search-field">
               <Search size={17} aria-hidden="true" />
               <input
@@ -1137,11 +1198,6 @@ export default function App() {
                 aria-label="Search friends and requests"
               />
             </label>
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Add Friend</h3>
-              <FriendRequest onSubmit={handleFriendRequest} />
-            </div>
-
             <div className="space-y-2">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                 Friends ({filteredFriends.length})
@@ -1219,9 +1275,9 @@ export default function App() {
 
         {/* 3. NOTIFICATIONS TAB */}
         {activeTab === 'notifications' && (
-          <div className="p-4 space-y-3">
+          <div className="notifications-screen">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <span className="notifications-status">
                 {unreadNotifications ? `${unreadNotifications} Unread` : 'All caught up'}
               </span>
               {unreadNotifications > 0 && (
@@ -1244,10 +1300,10 @@ export default function App() {
                 <div 
                   key={notification.id} 
                   onClick={() => openNotification(notification)}
-                  className={`p-3 rounded-xl border transition cursor-pointer flex items-center justify-between ${notification.read ? 'bg-white border-slate-200' : 'bg-indigo-50/60 border-indigo-200'}`}
+                  className={`notification-entry ${notification.read ? '' : 'notification-entry-unread'}`}
                 >
                   <div className="flex items-center space-x-3">
-                    <span className="text-indigo-600">
+                    <span className="notification-entry-icon">
                       {notification.kind === 'friend-request'
                         ? <Users size={18} />
                         : notification.kind === 'friend-request-status'
@@ -1287,28 +1343,39 @@ export default function App() {
 
         {/* 4. SETTINGS TAB */}
         {activeTab === 'settings' && (
-          <div className="p-4 space-y-4">
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3">
-              <div className="w-12 h-12 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-lg">
-                {session.user.displayName.slice(0, 1).toUpperCase()}
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-800">{session.user.displayName}</h3>
-                <p className="text-xs text-slate-500 font-mono">Code: {session.user.friendCode}</p>
-              </div>
+          <div className="settings-screen">
+            <h2 className="settings-page-title">Settings</h2>
+            <div className="settings-gear-art" aria-hidden="true">
+              <Settings className="settings-gear settings-gear-large" />
+              <Settings className="settings-gear settings-gear-medium" />
+              <Settings className="settings-gear settings-gear-small" />
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Account Settings</h4>
-              <div className="flex items-center justify-between py-2 border-b border-slate-100 text-sm">
-                <span>Language</span>
-                <span className="font-medium text-slate-600 uppercase">{session.user.language || 'EN'}</span>
+            <section className="settings-options" aria-labelledby="settings-account-title">
+              <h3 id="settings-account-title">Settings</h3>
+              <div className="settings-row">
+                <UserRound size={19} />
+                <span>Account</span>
+                <ChevronRight size={18} />
               </div>
+              <div className="settings-row">
+                <LockKeyhole size={19} />
+                <span>Privacy</span>
+                <ChevronRight size={18} />
+              </div>
+              <div className="settings-row">
+                <Globe2 size={19} />
+                <span>Language</span>
+                <strong>{session.user.language || 'EN'}</strong>
+              </div>
+            </section>
+
+            <div className="settings-signout">
               <button 
+                type="button"
                 onClick={signOut}
-                className="w-full mt-4 py-2.5 bg-red-50 text-red-600 rounded-xl font-semibold text-sm hover:bg-red-100 transition flex items-center justify-center space-x-2"
+                className="settings-signout-button"
               >
-                <LogOut size={16} />
                 <span>Sign Out</span>
               </button>
             </div>

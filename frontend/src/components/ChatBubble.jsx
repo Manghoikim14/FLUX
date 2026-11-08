@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Languages } from "lucide-react";
 import { translateText } from "../services/translation.js";
 
-export default function ChatBubble({ message, mine }) {
+export default function ChatBubble({ message, mine, peerName = '' }) {
   const [translated, setTranslated] = useState("");
   const [showOriginal, setShowOriginal] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
@@ -42,6 +42,11 @@ export default function ChatBubble({ message, mine }) {
 
   return (
     <div className={`message-row ${mine ? "message-row-mine" : "message-row-theirs"}`}>
+      {!mine && (
+        <span className="conversation-message-avatar" aria-hidden="true">
+          {peerName.slice(0, 1).toUpperCase()}
+        </span>
+      )}
       <div className="chat-bubble-wrapper">
         <article className={`chat-bubble ${mine ? "chat-bubble-mine" : "chat-bubble-theirs"}`}>
           <p>{displayText}</p>
