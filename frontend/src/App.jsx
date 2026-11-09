@@ -84,6 +84,7 @@ export default function App() {
   const [forwardingMessage, setForwardingMessage] = useState(null);
   const [messageInfo, setMessageInfo] = useState(null);
   const [messageDeleteConfirmation, setMessageDeleteConfirmation] = useState(null);
+  const [friendActionConfirmation, setFriendActionConfirmation] = useState(null);
   const [sendNotice, setSendNotice] = useState('');
   const scheduledNoticeMessageId = useRef(null);
   const draftInput = useRef(null);
@@ -704,7 +705,6 @@ export default function App() {
   }
 
   async function handleUnfriend(friend) {
-    if (!window.confirm(`Unfriend ${friend.displayName}?`)) return;
     setError('');
     setUnfriendingId(friend.id);
     try {
@@ -722,7 +722,6 @@ export default function App() {
   }
 
   async function handleDeleteChat(friend) {
-    if (!window.confirm(`Delete your chat history with ${friend.displayName}? This only clears it from your account.`)) return;
     setError('');
     setSendNotice('');
     setDeletingChat(true);
@@ -1106,7 +1105,7 @@ export default function App() {
                       disabled={deletingChat}
                       onClick={() => {
                         setShowChatMenu(false);
-                        handleDeleteChat(activeFriend);
+                        setFriendActionConfirmation({ action: 'delete-chat', friend: activeFriend });
                       }}
                     >
                       <Trash2 size={16} />
@@ -1119,7 +1118,7 @@ export default function App() {
                       disabled={unfriendingId === activeFriend.id}
                       onClick={() => {
                         setShowChatMenu(false);
-                        handleUnfriend(activeFriend);
+                        setFriendActionConfirmation({ action: 'unfriend', friend: activeFriend });
                       }}
                     >
                       <UserMinus size={16} />
@@ -1639,7 +1638,7 @@ export default function App() {
                     <span className="font-medium text-sm text-slate-800">{friend.displayName}</span>
                     <button
                       type="button"
-                      onClick={() => handleUnfriend(friend)}
+                      onClick={() => setFriendActionConfirmation({ action: 'unfriend', friend })}
                       disabled={unfriendingId === friend.id}
                       className="request-reject-button"
                     >
@@ -1889,6 +1888,46 @@ export default function App() {
         )}
 
       </main>
+      {friendActionConfirmation && (
+        <div
+          className="app-confirm-dialog"
+          role="presentation"
+          onClick={() => setFriendActionConfirmation(null)}
+        >
+          <section
+            className="app-confirm-card"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="friend-action-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="friend-action-title">
+              {friendActionConfirmation.action === 'unfriend' ? 'Unfriend this person?' : 'Delete chat history?'}
+            </h2>
+            <p>
+              {friendActionConfirmation.action === 'unfriend'
+                ? `Remove ${friendActionConfirmation.friend.displayName} from your friends?`
+                : `Delete your chat history with ${friendActionConfirmation.friend.displayName}? This only clears it from your account.`}
+            </p>
+            <div className="app-confirm-actions">
+              <button type="button" onClick={() => setFriendActionConfirmation(null)}>Cancel</button>
+              <button
+                type="button"
+                className="app-confirm-destructive"
+                disabled={unfriendingId === friendActionConfirmation.friend.id || deletingChat}
+                onClick={() => {
+                  const { action, friend } = friendActionConfirmation;
+                  setFriendActionConfirmation(null);
+                  if (action === 'unfriend') handleUnfriend(friend);
+                  else handleDeleteChat(friend);
+                }}
+              >
+                {friendActionConfirmation.action === 'unfriend' ? 'Unfriend' : 'Delete chat'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {/* WHATSAPP-STYLE BOTTOM NAVIGATION BAR */}
       <nav className="h-16 bg-white border-t border-slate-200 flex items-center justify-around shrink-0">

@@ -51,7 +51,7 @@ function isAllowedOrigin(origin) {
 
 const corsOptions = {
   origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
-  methods: ['GET', 'POST'],
+  methods: ['GET', 'POST', 'DELETE'],
 };
 const io = new Server(server, { cors: corsOptions });
 app.set('io', io);
